@@ -10,6 +10,9 @@ pub fn paint_and_schedule(
         if runner_lock.needs_repaint.fetch_and_clear() {
             runner_lock.clear_color_buffer();
             let (needs_repaint, clipped_primitives) = runner_lock.logic()?;
+
+            runner_lock.paint_direct_callbacks(&clipped_primitives);
+
             runner_lock.paint(&clipped_primitives)?;
             if needs_repaint {
                 runner_lock.needs_repaint.set_true();

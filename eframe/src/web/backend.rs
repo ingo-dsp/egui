@@ -283,6 +283,11 @@ impl AppRunner {
             .clear(self.app.clear_color(&self.egui_ctx.style().visuals));
     }
 
+    pub fn paint_direct_callbacks(&mut self, clipped_primitives: &[egui::ClippedPrimitive]) -> Result<(), JsValue> {
+        self.painter.paint_direct_callbacks(clipped_primitives, self.egui_ctx.pixels_per_point())?;
+        Ok(())
+    }
+
     /// Paint the results of the last call to [`Self::logic`].
     pub fn paint(&mut self, clipped_primitives: &[egui::ClippedPrimitive]) -> Result<(), JsValue> {
         let textures_delta = std::mem::take(&mut self.textures_delta);

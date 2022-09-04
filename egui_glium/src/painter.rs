@@ -103,7 +103,7 @@ impl Painter {
                 Primitive::Mesh(mesh) => {
                     self.paint_mesh(target, display, pixels_per_point, clip_rect, mesh);
                 }
-                Primitive::Callback(_) => {
+                Primitive::Callback(_) | Primitive::DirectCallback(_) => {
                     panic!("Custom rendering callbacks are not implemented in egui_glium");
                 }
             }

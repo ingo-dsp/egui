@@ -57,6 +57,16 @@ impl WrappedGlowPainter {
         egui_glow::painter::clear(self.painter.gl(), canvas_dimension, clear_color);
     }
 
+    pub fn paint_direct_callbacks(&mut self,
+        clipped_primitives: &[ClippedPrimitive],
+        pixels_per_point: f32,
+    ) -> Result<(), JsValue> {
+        let canvas_dimension = [self.canvas.width(), self.canvas.height()];
+        self.painter
+            .paint_direct_callbacks(canvas_dimension, pixels_per_point, clipped_primitives);
+        Ok(())
+    }
+
     pub fn paint_primitives(
         &mut self,
         clipped_primitives: &[ClippedPrimitive],

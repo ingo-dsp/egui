@@ -107,6 +107,7 @@ pub struct ClippedPrimitive {
 pub enum Primitive {
     Mesh(Mesh),
     Callback(PaintCallback),
+    DirectCallback(PaintCallback), // ADDED by ingo: Callback that does not render into sRGBA texture, but directly onto screen (circumvents post-processing).
 }
 
 // ----------------------------------------------------------------------------

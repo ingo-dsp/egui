@@ -397,6 +397,9 @@ impl Painter {
                         };
                     }
                 }
+                Primitive::DirectCallback(_) => {
+                    // do not handle here - we handle this in paint_direct_callbacks()
+                }
             }
         }
 
@@ -411,6 +414,41 @@ impl Painter {
             self.gl.disable(glow::SCISSOR_TEST);
 
             check_for_gl_error!(&self.gl, "painting");
+        }
+    }
+
+    pub fn paint_direct_callbacks(
+        &mut self,
+        inner_size: [u32; 2],
+        pixels_per_point: f32,
+        clipped_primitives: &[egui::ClippedPrimitive],
+    ) {
+        crate::profile_function!();
+        self.assert_not_destroyed();
+
+        for egui::ClippedPrimitive {
+            clip_rect,
+            primitive,
+        } in clipped_primitives
+        {
+            match primitive {
+                Primitive::Mesh(_) => {}     // do not handle here
+                Primitive::Callback(_) => {} // do not handle here
+                Primitive::DirectCallback(callback) => {
+                    if callback.rect.is_positive() {
+                        crate::profile_scope!("callback");
+                        let info = egui::PaintCallbackInfo {
+                            viewport: callback.rect,
+                            clip_rect: *clip_rect,
+                            pixels_per_point,
+                            screen_size_px: inner_size,
+                        };
+                        callback.call(&info, self);
+
+                        check_for_gl_error!(&self.gl, "callback");
+                    }
+                }
+            }
         }
     }
 
