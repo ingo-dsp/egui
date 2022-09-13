@@ -6,7 +6,6 @@ pub use egui::{pos2, Color32};
 // BEGIN ADDED
 use egui::Vec2;
 pub type NeedsRender = bool;
-use crate::glow_wrapping::WrappedGlowPainter;
 // BEGIN ADDED
 
 // ----------------------------------------------------------------------------
@@ -132,7 +131,10 @@ fn test_parse_query() {
 pub struct AppRunner {
     pub(crate) frame: epi::Frame,
     egui_ctx: egui::Context,
-    painter: WrappedGlowPainter,
+
+    // BEGIN CHANGED
+    pub(crate) painter: WrappedGlowPainter,
+    // END CHANGED
     pub(crate) input: WebInput,
     app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
@@ -212,7 +214,8 @@ impl AppRunner {
 
     // BEGIN ADDED
     pub fn render_gl(&mut self, _canvas_size: Vec2) -> NeedsRender {
-        let gl = &self.painter.glow_ctx;
+        use egui_glow::glow;
+        let gl: &glow::Context = &self.painter.painter.gl;
         let needs_render = self.app.render_gl(&Box::new(gl));
         needs_render
     }

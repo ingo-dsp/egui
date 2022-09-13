@@ -27,7 +27,10 @@ const FRAG_SRC: &str = include_str!("shader/fragment.glsl");
 /// This struct must be destroyed with [`Painter::destroy`] before dropping, to ensure OpenGL
 /// objects have been properly deleted and are not leaked.
 pub struct Painter {
-    gl: Rc<glow::Context>,
+    // BEGIN CHANGED
+    pub gl: Rc<glow::Context>,
+    // END CHANGED
+
 
     max_texture_side: usize,
 
