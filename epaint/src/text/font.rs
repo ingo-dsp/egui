@@ -1,10 +1,11 @@
 use crate::{
-    mutex::{Arc, Mutex, RwLock},
+    mutex::{Mutex, RwLock},
     TextureAtlas,
 };
 use ahash::AHashMap;
 use emath::{vec2, Vec2};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 // ----------------------------------------------------------------------------
 
@@ -212,7 +213,7 @@ impl FontImpl {
 type FontIndex = usize;
 
 // TODO: rename?
-/// Wrapper over multiple `FontImpl` (e.g. a primary + fallbacks for emojis)
+/// Wrapper over multiple [`FontImpl`] (e.g. a primary + fallbacks for emojis)
 pub struct Font {
     fonts: Vec<Arc<FontImpl>>,
     /// Lazily calculated.

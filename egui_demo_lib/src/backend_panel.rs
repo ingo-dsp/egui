@@ -12,7 +12,7 @@ enum RunMode {
     /// For instance, a GUI for a thermostat need to repaint each time the temperature changes.
     /// To ensure the UI is up to date you need to call `egui::Context::request_repaint()` each
     /// time such an event happens. You can also chose to call `request_repaint()` once every second
-    /// or after every single frame - this is called "Continuous" mode,
+    /// or after every single frame - this is called [`Continuous`](RunMode::Continuous) mode,
     /// and for games and interactive tools that need repainting every frame anyway, this should be the default.
     Reactive,
 
@@ -41,13 +41,14 @@ impl Default for RunMode {
 
 // ----------------------------------------------------------------------------
 
+#[derive(Default)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct BackendPanel {
     pub open: bool,
 
     #[cfg_attr(feature = "serde", serde(skip))]
-    // go back to `Reactive` mode each time we start
+    // go back to [`Reactive`] mode each time we start
     run_mode: RunMode,
 
     /// current slider value for current gui scale
@@ -58,18 +59,6 @@ pub struct BackendPanel {
     frame_history: crate::frame_history::FrameHistory,
 
     egui_windows: EguiWindows,
-}
-
-impl Default for BackendPanel {
-    fn default() -> Self {
-        Self {
-            open: false,
-            run_mode: Default::default(),
-            pixels_per_point: Default::default(),
-            frame_history: Default::default(),
-            egui_windows: Default::default(),
-        }
-    }
 }
 
 impl BackendPanel {

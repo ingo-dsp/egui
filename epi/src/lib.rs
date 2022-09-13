@@ -9,7 +9,8 @@
 #![warn(missing_docs)] // Let's keep `epi` well-documented.
 
 /// File storage which can be used by native backends.
-#[cfg(feature = "file_storage")]
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "persistence")]
 pub mod file_storage;
 
 pub use egui; // Re-export for user convenience
@@ -74,7 +75,7 @@ pub trait App {
     ///
     /// A scenario where this method will be run is after pressing the close button on a native
     /// window, which allows you to ask the user whether they want to do something before exiting.
-    /// See the example `eframe/examples/confirm_exit.rs` for practical usage.
+    /// See the example at <https://github.com/emilk/egui/blob/master/examples/confirm_exit/> for practical usage.
     ///
     /// It will _not_ be called on the web or when the window is forcefully closed.
     fn on_exit_event(&mut self) -> bool {
@@ -325,6 +326,11 @@ impl Frame {
         self.output.decorated = Some(decorated);
     }
 
+    /// set the position of the outer window
+    pub fn set_window_pos(&mut self, pos: egui::Pos2) {
+        self.output.window_pos = Some(pos);
+    }
+
     /// When called, the native window will follow the
     /// movement of the cursor while the primary mouse button is down.
     ///
@@ -505,5 +511,8 @@ pub mod backend {
 
         /// Set to true to drag window while primary mouse button is down.
         pub drag_window: bool,
+
+        /// Set to some position to move the outer window (e.g. glium window) to this position
+        pub window_pos: Option<egui::Pos2>,
     }
 }

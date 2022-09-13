@@ -412,9 +412,10 @@ impl State {
                     self.egui_input.events.push(egui::Event::Copy);
                 } else if is_paste_command(self.egui_input.modifiers, keycode) {
                     if let Some(contents) = self.clipboard.get() {
-                        self.egui_input
-                            .events
-                            .push(egui::Event::Paste(contents.replace("\r\n", "\n")));
+                        let contents = contents.replace("\r\n", "\n");
+                        if !contents.is_empty() {
+                            self.egui_input.events.push(egui::Event::Paste(contents));
+                        }
                     }
                 }
             }
@@ -644,4 +645,26 @@ fn translate_cursor(cursor_icon: egui::CursorIcon) -> Option<winit::window::Curs
         egui::CursorIcon::ZoomIn => Some(winit::window::CursorIcon::ZoomIn),
         egui::CursorIcon::ZoomOut => Some(winit::window::CursorIcon::ZoomOut),
     }
+}
+
+// ---------------------------------------------------------------------------
+
+/// Profiling macro for feature "puffin"
+#[doc(hidden)]
+#[macro_export]
+macro_rules! profile_function {
+    ($($arg: tt)*) => {
+        #[cfg(feature = "puffin")]
+        puffin::profile_function!($($arg)*);
+    };
+}
+
+/// Profiling macro for feature "puffin"
+#[doc(hidden)]
+#[macro_export]
+macro_rules! profile_scope {
+    ($($arg: tt)*) => {
+        #[cfg(feature = "puffin")]
+        puffin::profile_scope!($($arg)*);
+    };
 }

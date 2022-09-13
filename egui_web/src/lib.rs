@@ -470,12 +470,11 @@ fn install_document_events(runner_container: &AppRunnerContainer) -> Result<(), 
         |event: web_sys::ClipboardEvent, mut runner_lock| {
             if let Some(data) = event.clipboard_data() {
                 if let Ok(text) = data.get_data("text") {
-                    runner_lock
-                        .input
-                        .raw
-                        .events
-                        .push(egui::Event::Paste(text.replace("\r\n", "\n")));
-                    runner_lock.needs_repaint.set_true();
+                    let text = text.replace("\r\n", "\n");
+                    if !text.is_empty() {
+                        runner_lock.input.raw.events.push(egui::Event::Paste(text));
+                        runner_lock.needs_repaint.set_true();
+                    }
                     event.stop_propagation();
                     event.prevent_default();
                 }
@@ -505,7 +504,7 @@ fn install_document_events(runner_container: &AppRunnerContainer) -> Result<(), 
 
     for event_name in &["load", "pagehide", "pageshow", "resize"] {
         runner_container.add_event_listener(
-            &document,
+            &window,
             event_name,
             |_: web_sys::Event, runner_lock| {
                 runner_lock.needs_repaint.set_true();
@@ -514,7 +513,7 @@ fn install_document_events(runner_container: &AppRunnerContainer) -> Result<(), 
     }
 
     runner_container.add_event_listener(
-        &document,
+        &window,
         "hashchange",
         |_: web_sys::Event, mut runner_lock| {
             // `epi::Frame::info(&self)` clones `epi::IntegrationInfo`, but we need to modify the original here
@@ -763,7 +762,7 @@ fn install_canvas_events(runner_container: &AppRunnerContainer) -> Result<(), Js
 
             // Report a zoom event in case CTRL (on Windows or Linux) or CMD (on Mac) is pressed.
             // This if-statement is equivalent to how `Modifiers.command` is determined in
-            // `modifiers_from_event()`, but we cannot directly use that fn for a `WheelEvent`.
+            // `modifiers_from_event()`, but we cannot directly use that fn for a [`WheelEvent`].
             if event.ctrl_key() || event.meta_key() {
                 let factor = (delta.y / 200.0).exp();
                 runner_lock.input.raw.events.push(egui::Event::Zoom(factor));

@@ -99,6 +99,7 @@ impl Painter {
         pp_fb_extent: Option<[i32; 2]>,
         shader_prefix: &str,
     ) -> Result<Painter, String> {
+        crate::profile_function!();
         check_for_gl_error!(&gl, "before Painter::new");
 
         let max_texture_side = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) } as usize;
@@ -113,7 +114,7 @@ impl Painter {
             // WebGL2 support sRGB default
             (ShaderVersion::Es300, _) | (ShaderVersion::Es100, true) => unsafe {
                 // Add sRGB support marker for fragment shader
-                if let Some([width, height]) = pp_fb_extent {
+                if let Some(size) = pp_fb_extent {
                     tracing::debug!("WebGL with sRGB enabled. Turning on post processing for linear framebuffer blending.");
                     // install post process to correct sRGB color:
                     (
@@ -121,8 +122,7 @@ impl Painter {
                             gl.clone(),
                             shader_prefix,
                             is_webgl_1,
-                            width,
-                            height,
+                            size,
                         )?),
                         "#define SRGB_SUPPORTED",
                     )
@@ -300,6 +300,7 @@ impl Painter {
         clipped_primitives: &[egui::ClippedPrimitive],
         textures_delta: &egui::TexturesDelta,
     ) {
+        crate::profile_function!();
         for (id, image_delta) in &textures_delta.set {
             self.set_texture(*id, image_delta);
         }
@@ -336,11 +337,13 @@ impl Painter {
         pixels_per_point: f32,
         clipped_primitives: &[egui::ClippedPrimitive],
     ) {
+        crate::profile_function!();
         self.assert_not_destroyed();
 
         if let Some(ref mut post_process) = self.post_process {
             unsafe {
                 post_process.begin(inner_size[0] as i32, inner_size[1] as i32);
+                post_process.bind();
             }
         }
         let size_in_pixels = unsafe { self.prepare_painting(inner_size, pixels_per_point) };
@@ -358,6 +361,7 @@ impl Painter {
                 }
                 Primitive::Callback(callback) => {
                     if callback.rect.is_positive() {
+                        crate::profile_scope!("callback");
                         // Transform callback rect to physical pixels:
                         let rect_min_x = pixels_per_point * callback.rect.min.x;
                         let rect_min_y = pixels_per_point * callback.rect.min.y;
@@ -379,7 +383,8 @@ impl Painter {
                         }
 
                         let info = egui::PaintCallbackInfo {
-                            rect: callback.rect,
+                            viewport: callback.rect,
+                            clip_rect: *clip_rect,
                             pixels_per_point,
                             screen_size_px: inner_size,
                         };
@@ -459,6 +464,8 @@ impl Painter {
     // ------------------------------------------------------------------------
 
     pub fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
+        crate::profile_function!();
+
         self.assert_not_destroyed();
 
         let glow_texture = *self

@@ -1,10 +1,12 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 script_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 cd "$script_path/.."
 set -eux
 
 # Checks all tests, lints etc.
 # Basically does what the CI does.
+
+RUSTDOCFLAGS="-D warnings" # https://github.com/emilk/egui/pull/1454
 
 cargo check --workspace --all-targets
 cargo check --workspace --all-targets --all-features
@@ -22,7 +24,7 @@ cargo doc --document-private-items --no-deps --all-features
 (cd emath && cargo check --no-default-features)
 (cd epaint && cargo check --no-default-features)
 (cd epaint && cargo check --no-default-features --release)
-(cd egui && cargo check --no-default-features --features "serialize")
+(cd egui && cargo check --no-default-features --features "serde")
 (cd eframe && cargo check --no-default-features)
 (cd epi && cargo check --no-default-features)
 (cd egui_demo_lib && cargo check --no-default-features)
@@ -40,7 +42,7 @@ cargo doc --document-private-items --no-deps --all-features
 (cd egui_glium && cargo check --all-features)
 (cd egui_glow && cargo check --all-features)
 (cd egui_web && cargo check --all-features)
-# (cd egui-winit && cargo check --all-features) can't do, beacause of https://github.com/rust-lang/cargo/issues/8832
+(cd egui-winit && cargo check --all-features)
 (cd emath && cargo check --all-features)
 (cd epaint && cargo check --all-features)
 (cd epi && cargo check --all-features)
@@ -63,3 +65,5 @@ cargo deny check
 
 # what compiles slowly?
 # cargo llvm-lines --lib -p egui | head -20
+
+echo "All checks passed."

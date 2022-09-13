@@ -20,7 +20,8 @@ use super::{
     Sense, TextStyle, Ui, Vec2,
 };
 use crate::{widgets::*, *};
-use epaint::{mutex::Arc, mutex::RwLock, Stroke};
+use epaint::{mutex::RwLock, Stroke};
+use std::sync::Arc;
 
 /// What is saved between frames.
 #[derive(Clone, Default)]
@@ -61,8 +62,8 @@ impl std::ops::DerefMut for BarState {
 }
 
 /// The menu bar goes well in a [`TopBottomPanel::top`],
-/// but can also be placed in a `Window`.
-/// In the latter case you may want to wrap it in `Frame`.
+/// but can also be placed in a [`Window`].
+/// In the latter case you may want to wrap it in [`Frame`].
 pub fn bar<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
     ui.horizontal(|ui| {
         let mut style = (**ui.style()).clone();
@@ -213,7 +214,7 @@ impl MenuRootManager {
     ) -> Option<InnerResponse<R>> {
         if let Some(root) = self.inner.as_mut() {
             let (menu_response, inner_response) = root.show(response, add_contents);
-            if let MenuResponse::Close = menu_response {
+            if MenuResponse::Close == menu_response {
                 self.inner = None;
             }
             inner_response
@@ -480,13 +481,13 @@ impl SubMenu {
     }
 }
 pub(crate) struct MenuState {
-    /// The opened sub-menu and its `Id`
+    /// The opened sub-menu and its [`Id`]
     sub_menu: Option<(Id, Arc<RwLock<MenuState>>)>,
     /// Bounding box of this menu (without the sub-menu)
     pub rect: Rect,
     /// Used to check if any menu in the tree wants to close
     pub response: MenuResponse,
-    /// Used to hash different `Id`s for sub-menus
+    /// Used to hash different [`Id`]s for sub-menus
     entry_count: usize,
 }
 impl MenuState {
