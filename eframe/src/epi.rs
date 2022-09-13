@@ -27,7 +27,8 @@ pub struct CreationContext<'s> {
 
     /// The [`glow::Context`] allows you to initialize OpenGL resources (e.g. shaders) that
     /// you might want to use later from a [`egui::PaintCallback`].
-    pub gl: std::rc::Rc<glow::Context>,
+    #[cfg(feature = "glow")]
+    pub gl: Option<std::rc::Rc<glow::Context>>,
 }
 
 // ----------------------------------------------------------------------------
@@ -74,7 +75,17 @@ pub trait App {
     /// Called once on shutdown, after [`Self::save`].
     ///
     /// If you need to abort an exit use [`Self::on_exit_event`].
-    fn on_exit(&mut self, _gl: &glow::Context) {}
+    ///
+    /// To get a [`glow`] context you need to compile with the `glow` feature flag,
+    /// and run eframe with the glow backend.
+    #[cfg(feature = "glow")]
+    fn on_exit(&mut self, _gl: Option<&glow::Context>) {}
+
+    /// Called once on shutdown, after [`Self::save`].
+    ///
+    /// If you need to abort an exit use [`Self::on_exit_event`].
+    #[cfg(not(feature = "glow"))]
+    fn on_exit(&mut self) {}
 
     // ---------
     // Settings:
@@ -202,6 +213,9 @@ pub struct NativeOptions {
     ///
     /// `egui` doesn't need the stencil buffer, so the default value is 0.
     pub stencil_buffer: u8,
+
+    /// What rendering backend to use.
+    pub renderer: Renderer,
 }
 
 impl Default for NativeOptions {
@@ -222,9 +236,73 @@ impl Default for NativeOptions {
             multisampling: 0,
             depth_buffer: 0,
             stencil_buffer: 0,
+            renderer: Renderer::default(),
         }
     }
 }
+
+// ----------------------------------------------------------------------------
+
+/// What rendering backend to use.
+///
+/// You need to enable the "glow" and "wgpu" features to have a choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Renderer {
+    /// Use [`egui_glow`] renderer for [`glow`](https://github.com/grovesNL/glow).
+    #[cfg(feature = "glow")]
+    Glow,
+
+    /// Use [`egui_wgpu`] renderer for [`wgpu`](https://github.com/gfx-rs/wgpu).
+    #[cfg(feature = "wgpu")]
+    Wgpu,
+}
+
+impl Default for Renderer {
+    fn default() -> Self {
+        #[cfg(feature = "glow")]
+        return Self::Glow;
+
+        #[cfg(not(feature = "glow"))]
+        #[cfg(feature = "wgpu")]
+        return Self::Wgpu;
+
+        #[cfg(not(feature = "glow"))]
+        #[cfg(not(feature = "wgpu"))]
+        compile_error!("eframe: you must enable at least one of the rendering backend features: 'glow' or 'wgpu'");
+    }
+}
+
+impl std::fmt::Display for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "glow")]
+            Self::Glow => "glow".fmt(f),
+
+            #[cfg(feature = "wgpu")]
+            Self::Wgpu => "wgpu".fmt(f),
+        }
+    }
+}
+
+impl std::str::FromStr for Renderer {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, String> {
+        match name.to_lowercase().as_str() {
+            #[cfg(feature = "glow")]
+            "glow" => Ok(Self::Glow),
+
+            #[cfg(feature = "wgpu")]
+            "wgpu" => Ok(Self::Wgpu),
+
+            _ => Err(format!("eframe renderer {name:?} is not available. Make sure that the corresponding eframe feature is enabled."))
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
 
 /// Image data for an application icon.
 #[derive(Clone)]
@@ -257,8 +335,9 @@ pub struct Frame {
     pub storage: Option<Box<dyn Storage>>,
 
     /// A reference to the underlying [`glow`] (OpenGL) context.
+    #[cfg(feature = "glow")]
     #[doc(hidden)]
-    pub gl: std::rc::Rc<glow::Context>,
+    pub gl: Option<std::rc::Rc<glow::Context>>,
 }
 
 impl Frame {
@@ -291,8 +370,12 @@ impl Frame {
     ///
     /// Note that all egui painting is deferred to after the call to [`App::update`]
     /// ([`egui`] only collects [`egui::Shape`]s and then eframe paints them all in one go later on).
-    pub fn gl(&self) -> &std::rc::Rc<glow::Context> {
-        &self.gl
+    ///
+    /// To get a [`glow`] context you need to compile with the `glow` feature flag,
+    /// and run eframe with the glow backend.
+    #[cfg(feature = "glow")]
+    pub fn gl(&self) -> Option<&std::rc::Rc<glow::Context>> {
+        self.gl.as_ref()
     }
 
     /// Signal the app to stop/exit/quit the app (only works for native apps, not web apps).
@@ -342,6 +425,17 @@ impl Frame {
 pub struct WebInfo {
     /// Information about the URL.
     pub location: Location,
+}
+
+/// Information about the application's main window, if available.
+#[derive(Clone, Debug)]
+pub struct WindowInfo {
+    /// Coordinates of the window's outer top left corner, relative to the top left corner of the first display.
+    /// Unit: egui points (logical pixels).
+    pub position: egui::Pos2,
+
+    /// Window inner size in egui points (logical pixels).
+    pub size: egui::Vec2,
 }
 
 /// Information about the URL.
@@ -414,6 +508,9 @@ pub struct IntegrationInfo {
 
     /// The OS native pixels-per-point
     pub native_pixels_per_point: Option<f32>,
+
+    /// Window-specific geometry information, if provided by the platform.
+    pub window_info: Option<WindowInfo>,
 }
 
 // ----------------------------------------------------------------------------

@@ -322,6 +322,8 @@ pub use epaint;
 pub use epaint::emath;
 
 pub use emath::{lerp, pos2, remap, remap_clamp, vec2, Align, Align2, NumExt, Pos2, Rect, Vec2};
+#[cfg(feature = "color-hex")]
+pub use epaint::hex_color;
 pub use epaint::{
     color, mutex,
     text::{FontData, FontDefinitions, FontFamily, FontId, FontTweak},

@@ -47,7 +47,6 @@ mint = ["emath/mint"]
 # implement serde on most types.
 serde = ["dep:serde", "ahash/serde", "emath/serde"]
 
-
 [dependencies]
 emath = { version = "0.18.0", path = "../emath" }
 
@@ -55,6 +54,7 @@ ab_glyph = "0.2.11"
 nohash-hasher = "0.2"
 
 # Optional:
+color-hex = { version = "0.2.0", optional = true }
 ahash = { version = "0.7", default-features = false, features = ["std"] }
 bytemuck = { version = "1.7.2", optional = true, features = ["derive"] }
 cint = { version = "0.3.1", optional = true }

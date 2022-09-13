@@ -5,6 +5,8 @@
 
 #![allow(clippy::manual_range_contains)]
 
+use std::os::raw::c_void;
+
 pub use egui;
 pub use winit;
 
@@ -13,6 +15,15 @@ pub mod screen_reader;
 mod window_settings;
 
 pub use window_settings::WindowSettings;
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use winit::platform::unix::WindowExtUnix;
 
 pub fn native_pixels_per_point(window: &winit::window::Window) -> f32 {
     window.scale_factor() as f32
@@ -53,13 +64,21 @@ impl State {
     /// * `max_texture_side`: e.g. `GL_MAX_TEXTURE_SIZE`
     /// * the native `pixels_per_point` (dpi scaling).
     pub fn new(max_texture_side: usize, window: &winit::window::Window) -> Self {
-        Self::from_pixels_per_point(max_texture_side, native_pixels_per_point(window))
+        Self::from_pixels_per_point(
+            max_texture_side,
+            native_pixels_per_point(window),
+            get_wayland_display(window),
+        )
     }
 
     /// Initialize with:
     /// * `max_texture_side`: e.g. `GL_MAX_TEXTURE_SIZE`
     /// * the given `pixels_per_point` (dpi scaling).
-    pub fn from_pixels_per_point(max_texture_side: usize, pixels_per_point: f32) -> Self {
+    pub fn from_pixels_per_point(
+        max_texture_side: usize,
+        pixels_per_point: f32,
+        wayland_display: Option<*mut c_void>,
+    ) -> Self {
         Self {
             start_time: instant::Instant::now(),
             egui_input: egui::RawInput {
@@ -72,7 +91,7 @@ impl State {
             current_cursor_icon: egui::CursorIcon::Default,
             current_pixels_per_point: pixels_per_point,
 
-            clipboard: Default::default(),
+            clipboard: clipboard::Clipboard::new(wayland_display),
             screen_reader: screen_reader::ScreenReader::default(),
 
             simulate_touch_screen: false,
@@ -542,6 +561,8 @@ fn translate_mouse_button(button: winit::event::MouseButton) -> Option<egui::Poi
         winit::event::MouseButton::Left => Some(egui::PointerButton::Primary),
         winit::event::MouseButton::Right => Some(egui::PointerButton::Secondary),
         winit::event::MouseButton::Middle => Some(egui::PointerButton::Middle),
+        winit::event::MouseButton::Other(1) => Some(egui::PointerButton::Extra1),
+        winit::event::MouseButton::Other(2) => Some(egui::PointerButton::Extra2),
         winit::event::MouseButton::Other(_) => None,
     }
 }
@@ -655,6 +676,23 @@ fn translate_cursor(cursor_icon: egui::CursorIcon) -> Option<winit::window::Curs
         egui::CursorIcon::ZoomIn => Some(winit::window::CursorIcon::ZoomIn),
         egui::CursorIcon::ZoomOut => Some(winit::window::CursorIcon::ZoomOut),
     }
+}
+
+/// Returns a Wayland display handle if the target is running Wayland
+fn get_wayland_display(window: &winit::window::Window) -> Option<*mut c_void> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        return window.wayland_display();
+    }
+
+    #[allow(unreachable_code)]
+    None
 }
 
 // ---------------------------------------------------------------------------
