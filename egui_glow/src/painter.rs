@@ -50,7 +50,6 @@ pub struct Painter {
 
     textures: HashMap<egui::TextureId, glow::Texture>,
 
-    #[cfg(feature = "epi")]
     next_native_tex_id: u64, // TODO: 128-bit texture space?
 
     /// Stores outdated OpenGL textures that are yet to be deleted
@@ -225,7 +224,6 @@ impl Painter {
                 vbo,
                 element_array_buffer,
                 textures: Default::default(),
-                #[cfg(feature = "epi")]
                 next_native_tex_id: 1 << 32,
                 textures_to_destroy: Vec::new(),
                 destroyed: false,
@@ -606,6 +604,22 @@ impl Painter {
         self.textures.get(&texture_id).copied()
     }
 
+    #[allow(clippy::needless_pass_by_value)] // False positive
+    pub fn register_native_texture(&mut self, native: glow::Texture) -> egui::TextureId {
+        self.assert_not_destroyed();
+        let id = egui::TextureId::User(self.next_native_tex_id);
+        self.next_native_tex_id += 1;
+        self.textures.insert(id, native);
+        id
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // False positive
+    pub fn replace_native_texture(&mut self, id: egui::TextureId, replacing: glow::Texture) {
+        if let Some(old_tex) = self.textures.insert(id, replacing) {
+            self.textures_to_destroy.push(old_tex);
+        }
+    }
+
     unsafe fn destroy_gl(&self) {
         self.gl.delete_program(self.program);
         for tex in self.textures.values() {
@@ -665,25 +679,6 @@ impl Drop for Painter {
             tracing::warn!(
                 "You forgot to call destroy() on the egui glow painter. Resources will leak!"
             );
-        }
-    }
-}
-
-#[cfg(feature = "epi")]
-impl epi::NativeTexture for Painter {
-    type Texture = glow::Texture;
-
-    fn register_native_texture(&mut self, native: Self::Texture) -> egui::TextureId {
-        self.assert_not_destroyed();
-        let id = egui::TextureId::User(self.next_native_tex_id);
-        self.next_native_tex_id += 1;
-        self.textures.insert(id, native);
-        id
-    }
-
-    fn replace_native_texture(&mut self, id: egui::TextureId, replacing: Self::Texture) {
-        if let Some(old_tex) = self.textures.insert(id, replacing) {
-            self.textures_to_destroy.push(old_tex);
         }
     }
 }
