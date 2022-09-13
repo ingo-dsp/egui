@@ -76,7 +76,7 @@ pub fn drop_target<R>(
     InnerResponse::new(ret, response)
 }
 #[derive(Clone, PartialEq)]
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct DragAndDropDemo {
     /// columns with items
     columns: Vec<Vec<String>>,
@@ -170,7 +170,7 @@ impl super::View for DragAndDropDemo {
         }
 
         ui.vertical_centered(|ui| {
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
     }
 }

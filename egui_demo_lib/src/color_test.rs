@@ -9,6 +9,7 @@ const RED: Color32 = Color32::RED;
 const TRANSPARENT: Color32 = Color32::TRANSPARENT;
 const WHITE: Color32 = Color32::WHITE;
 
+/// A test for sanity-checking and diagnosing egui rendering backends.
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct ColorTest {
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -29,28 +30,12 @@ impl Default for ColorTest {
     }
 }
 
-impl epi::App for ColorTest {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if frame.is_web() {
-                ui.label(
-                    "NOTE: Some old browsers stuck on WebGL1 without sRGB support will not pass the color test.",
-                );
-                ui.separator();
-            }
-            ScrollArea::both().auto_shrink([false; 2]).show(ui, |ui| {
-                self.ui(ui);
-            });
-        });
-    }
-}
-
 impl ColorTest {
     pub fn ui(&mut self, ui: &mut Ui) {
         ui.set_max_width(680.0);
 
         ui.vertical_centered(|ui| {
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
 
         ui.label("This is made to test that the egui painter backend is set up correctly, so that all colors are interpolated and blended in linear space with premultiplied alpha.");

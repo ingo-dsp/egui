@@ -23,7 +23,7 @@ impl super::View for CursorTest {
                     .button(format!("{:?}", cursor_icon))
                     .on_hover_cursor(cursor_icon);
             }
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
     }
 }
@@ -77,7 +77,7 @@ impl super::View for IdTest {
         let _ = ui.button("Button");
 
         ui.vertical_centered(|ui| {
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
     }
 }
@@ -157,7 +157,7 @@ impl super::View for ManualLayoutTest {
         let widget_rect =
             egui::Rect::from_min_size(ui.min_rect().min + *widget_offset, *widget_size);
 
-        ui.add(crate::__egui_github_link_file!());
+        ui.add(crate::egui_github_link_file!());
 
         // Showing how to place a widget anywhere in the [`Ui`]:
         match *widget_type {
@@ -296,7 +296,7 @@ impl super::View for TableTest {
 
         ui.vertical_centered(|ui| {
             egui::reset_button(ui, self);
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
     }
 }
@@ -328,11 +328,11 @@ impl super::Demo for InputTest {
 impl super::View for InputTest {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
-            ui.add(crate::__egui_github_link_file!());
+            ui.add(crate::egui_github_link_file!());
         });
 
         let response = ui.add(
-            egui::Button::new("Click, double-click or drag me with any mouse button")
+            egui::Button::new("Click, double-click, triple-click or drag me with any mouse button")
                 .sense(egui::Sense::click_and_drag()),
         );
 
@@ -347,6 +347,9 @@ impl super::View for InputTest {
             }
             if response.double_clicked_by(button) {
                 new_info += &format!("Double-clicked by {:?} button\n", button);
+            }
+            if response.triple_clicked_by(button) {
+                new_info += &format!("Triple-clicked by {:?} button\n", button);
             }
             if response.dragged_by(button) {
                 new_info += &format!(
