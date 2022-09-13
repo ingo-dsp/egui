@@ -31,6 +31,20 @@ pub enum Shape {
     CubicBezier(CubicBezierShape),
 }
 
+impl From<Vec<Shape>> for Shape {
+    #[inline(always)]
+    fn from(shapes: Vec<Shape>) -> Self {
+        Self::Vec(shapes)
+    }
+}
+
+impl From<Mesh> for Shape {
+    #[inline(always)]
+    fn from(mesh: Mesh) -> Self {
+        Self::Mesh(mesh)
+    }
+}
+
 /// ## Constructors
 impl Shape {
     /// A line between two points.
@@ -59,25 +73,25 @@ impl Shape {
 
     /// Turn a line into equally spaced dots.
     pub fn dotted_line(
-        points: &[Pos2],
+        path: &[Pos2],
         color: impl Into<Color32>,
         spacing: f32,
         radius: f32,
     ) -> Vec<Self> {
         let mut shapes = Vec::new();
-        points_from_line(points, spacing, radius, color.into(), &mut shapes);
+        points_from_line(path, spacing, radius, color.into(), &mut shapes);
         shapes
     }
 
     /// Turn a line into dashes.
     pub fn dashed_line(
-        points: &[Pos2],
+        path: &[Pos2],
         stroke: impl Into<Stroke>,
         dash_length: f32,
         gap_length: f32,
     ) -> Vec<Self> {
         let mut shapes = Vec::new();
-        dashes_from_line(points, stroke.into(), dash_length, gap_length, &mut shapes);
+        dashes_from_line(path, stroke.into(), dash_length, gap_length, &mut shapes);
         shapes
     }
 
@@ -94,6 +108,8 @@ impl Shape {
     }
 
     /// A convex polygon with a fill and optional stroke.
+    ///
+    /// The most performant winding order is clockwise.
     #[inline]
     pub fn convex_polygon(
         points: Vec<Pos2>,
@@ -259,6 +275,7 @@ impl From<CircleShape> for Shape {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct PathShape {
+    /// Filled paths should prefer clockwise order.
     pub points: Vec<Pos2>,
     /// If true, connect the first and last of the points together.
     /// This is required if `fill != TRANSPARENT`.
@@ -294,6 +311,8 @@ impl PathShape {
     }
 
     /// A convex polygon with a fill and optional stroke.
+    ///
+    /// The most performant winding order is clockwise.
     #[inline]
     pub fn convex_polygon(
         points: Vec<Pos2>,
@@ -455,7 +474,7 @@ pub struct TextShape {
     /// This will NOT replace background color nor strikethrough/underline color.
     pub override_text_color: Option<Color32>,
 
-    /// Rotate text by this many radians clock-wise.
+    /// Rotate text by this many radians clockwise.
     /// The pivot is `pos` (the upper left corner of the text).
     pub angle: f32,
 }
@@ -490,16 +509,15 @@ impl From<TextShape> for Shape {
 
 /// Creates equally spaced filled circles from a line.
 fn points_from_line(
-    line: &[Pos2],
+    path: &[Pos2],
     spacing: f32,
     radius: f32,
     color: Color32,
     shapes: &mut Vec<Shape>,
 ) {
     let mut position_on_segment = 0.0;
-    line.windows(2).for_each(|window| {
-        let start = window[0];
-        let end = window[1];
+    path.windows(2).for_each(|window| {
+        let (start, end) = (window[0], window[1]);
         let vector = end - start;
         let segment_length = vector.length();
         while position_on_segment < segment_length {
@@ -513,7 +531,7 @@ fn points_from_line(
 
 /// Creates dashes from a line.
 fn dashes_from_line(
-    line: &[Pos2],
+    path: &[Pos2],
     stroke: Stroke,
     dash_length: f32,
     gap_length: f32,
@@ -521,9 +539,8 @@ fn dashes_from_line(
 ) {
     let mut position_on_segment = 0.0;
     let mut drawing_dash = false;
-    line.windows(2).for_each(|window| {
-        let start = window[0];
-        let end = window[1];
+    path.windows(2).for_each(|window| {
+        let (start, end) = (window[0], window[1]);
         let vector = end - start;
         let segment_length = vector.length();
 

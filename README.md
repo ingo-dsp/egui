@@ -148,7 +148,7 @@ Light Theme:
 
 ## Integrations
 
-egui is build to be easy to integrate into any existing game engine or platform you are working on.
+egui is built to be easy to integrate into any existing game engine or platform you are working on.
 egui itself doesn't know or care on what OS it is running or how to render things to the screen - that is the job of the egui integration.
 
 An integration needs to do the following each frame:
@@ -160,7 +160,7 @@ An integration needs to do the following each frame:
 
 ### Official integrations
 
-If you making an app, your best bet is using [`eframe`](https://github.com/emilk/egui/tree/master/eframe), the official egui framework. It lets you write apps that works on both the web and native. `eframe` is just a thin wrapper over `egui_web` and `egui_glium` (see below).
+If you're making an app, your best bet is using [`eframe`](https://github.com/emilk/egui/tree/master/eframe), the official egui framework. It lets you write apps that work on both the web and native. `eframe` is just a thin wrapper over `egui_web` and `egui_glium` (see below).
 
 These are the official egui integrations:
 
@@ -303,7 +303,19 @@ Also see [GitHub Discussions](https://github.com/emilk/egui/discussions/categori
 Yes! But you need to install your own font (`.ttf` or `.otf`) using `Context::set_fonts`.
 
 ### Can I customize the look of egui?
-Yes! You can customize the colors, spacing and sizes of everything. By default egui comes with a dark and a light theme.
+Yes! You can customize the colors, spacing, fonts and sizes of everything using `Context::set_style`.
+
+Here is an example (from https://github.com/AlexxxRu/TinyPomodoro):
+
+<img src="media/pompodoro-skin.png" width="50%">
+
+### How do I use egui with `async`?
+If you call `.await` in your GUI code, the UI will freeze, with is very bad UX. Instead, keep the GUI thread non-blocking and communicate with any concurrent tasks (`async` tasks or other threads) with something like:
+* Channels (e.g. [`std::sync::mpsc::channel`](https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html)). Make sure to use [`try_recv`](https://doc.rust-lang.org/std/sync/mpsc/struct.Receiver.html#method.try_recv) so you don't block the gui thread!
+* `Arc<Mutex<Value>>` (background thread sets a value; GUI thread reads it)
+* [`poll_promise::Promise`](https://docs.rs/poll-promise) (example: [`eframe/examples/download_image.rs`](https://github.com/emilk/egui/blob/master/eframe/examples/download_image.rs))
+* [`eventuals::Eventual`](https://docs.rs/eventuals/latest/eventuals/struct.Eventual.html)
+* [`tokio::sync::watch::channel`](https://docs.rs/tokio/latest/tokio/sync/watch/fn.channel.html)
 
 ### What about accessibility, such as screen readers?
 There is experimental support for a screen reader. In [the web demo](https://www.egui.rs/#demo) you can enable it in the "Backend" tab.
