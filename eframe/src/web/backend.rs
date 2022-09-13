@@ -149,35 +149,21 @@ pub struct AppRunner {
 
 impl AppRunner {
     pub fn new(canvas_id: &str, app_creator: epi::AppCreator) -> Result<Self, JsValue> {
-        let painter = WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?;
+        let painter = WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?; // fail early
 
         let prefer_dark_mode = super::prefer_dark_mode();
 
-        let frame = epi::Frame {
-            info: epi::IntegrationInfo {
-                web_info: Some(epi::WebInfo {
-                    location: web_location(),
-                }),
-                prefer_dark_mode,
-                cpu_usage: None,
-                native_pixels_per_point: Some(native_pixels_per_point()),
-            },
-            output: Default::default(),
-            storage: Some(Box::new(LocalStorage::default())),
-            gl: painter.gl().clone(),
+        let info = epi::IntegrationInfo {
+            web_info: Some(epi::WebInfo {
+                location: web_location(),
+            }),
+            prefer_dark_mode,
+            cpu_usage: None,
+            native_pixels_per_point: Some(native_pixels_per_point()),
         };
-
-        let needs_repaint: std::sync::Arc<NeedRepaint> = Default::default();
+        let storage = LocalStorage::default();
 
         let egui_ctx = egui::Context::default();
-
-        {
-            let needs_repaint = needs_repaint.clone();
-            egui_ctx.set_request_repaint_callback(move || {
-                needs_repaint.0.store(true, SeqCst);
-            });
-        }
-
         load_memory(&egui_ctx);
         if prefer_dark_mode == Some(true) {
             egui_ctx.set_visuals(egui::Visuals::dark());
@@ -187,10 +173,25 @@ impl AppRunner {
 
         let app = app_creator(&epi::CreationContext {
             egui_ctx: egui_ctx.clone(),
-            integration_info: frame.info(),
-            storage: frame.storage(),
+            integration_info: info.clone(),
+            storage: Some(&storage),
             gl: painter.painter.gl().clone(),
         });
+
+        let frame = epi::Frame {
+            info,
+            output: Default::default(),
+            storage: Some(Box::new(storage)),
+            gl: painter.gl().clone(),
+        };
+
+        let needs_repaint: std::sync::Arc<NeedRepaint> = Default::default();
+        {
+            let needs_repaint = needs_repaint.clone();
+            egui_ctx.set_request_repaint_callback(move || {
+                needs_repaint.0.store(true, SeqCst);
+            });
+        }
 
         let mut runner = Self {
             frame,
@@ -299,7 +300,8 @@ impl AppRunner {
     }
 
     pub fn clear_color_buffer(&self) {
-        self.painter.clear(self.app.clear_color());
+        self.painter
+            .clear(self.app.clear_color(&self.egui_ctx.style().visuals));
     }
 
     /// Paint the results of the last call to [`Self::logic`].
@@ -427,23 +429,14 @@ fn start_runner(app_runner: AppRunner) -> Result<AppRunnerRef, JsValue> {
     super::events::paint_and_schedule(&runner_container.runner, runner_container.panicked.clone())?;
 
     // Disable all event handlers on panic
-    std::panic::set_hook(Box::new({
-        let previous_hook = std::panic::take_hook();
+    let previous_hook = std::panic::take_hook();
+    let panicked = runner_container.panicked;
+    std::panic::set_hook(Box::new(move |panic_info| {
+        tracing::info!("egui disabled all event handlers due to panic");
+        panicked.store(true, SeqCst);
 
-        let panicked = runner_container.panicked;
-
-        move |panic_info| {
-            tracing::info_span!("egui_panic_handler").in_scope(|| {
-                tracing::trace!("setting panicked flag");
-
-                panicked.store(true, SeqCst);
-
-                tracing::info!("egui disabled all event handlers due to panic");
-            });
-
-            // Propagate panic info to the previously registered panic hook
-            previous_hook(panic_info);
-        }
+        // Propagate panic info to the previously registered panic hook
+        previous_hook(panic_info);
     }));
 
     Ok(runner_container.runner)
