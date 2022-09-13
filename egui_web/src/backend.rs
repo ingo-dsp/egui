@@ -11,26 +11,11 @@ use crate::glow_wrapping::WrappedGlowPainter;
 
 // ----------------------------------------------------------------------------
 
+// BEGIN CHANGED
 fn create_painter(canvas_id: &str) -> Result<WrappedGlowPainter, JsValue> {
-    // BEGIN CHANGED
-    // Glow takes precedence:
-    #[cfg(all(feature = "glow"))]
-    return Ok(crate::glow_wrapping::WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?);
-    // END CHANGED
-
-    #[cfg(all(feature = "webgl", not(feature = "glow")))]
-    if let Ok(webgl2_painter) = webgl2::WebGl2Painter::new(canvas_id) {
-        tracing::debug!("Using WebGL2 backend");
-        Ok(Box::new(webgl2_painter))
-    } else {
-        tracing::debug!("Falling back to WebGL1 backend");
-        let webgl1_painter = webgl1::WebGlPainter::new(canvas_id)?;
-        Ok(Box::new(webgl1_painter))
-    }
-
-    #[cfg(all(not(feature = "webgl"), not(feature = "glow")))]
-    compile_error!("Either the 'glow' or 'webgl' feature of egui_web must be enabled!");
+    Ok(crate::glow_wrapping::WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?)
 }
+// END CHANGED
 
 // ----------------------------------------------------------------------------
 
