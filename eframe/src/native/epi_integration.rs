@@ -47,11 +47,12 @@ pub fn window_builder(
         max_window_size,
         resizable,
         transparent,
-        vsync: _,          // used in `fn create_display`
-        multisampling: _,  // used in `fn create_display`
-        depth_buffer: _,   // used in `fn create_display`
-        stencil_buffer: _, // used in `fn create_display`
-        renderer: _,       // used in `fn run_native`
+        vsync: _,                 // used in `fn create_display`
+        multisampling: _,         // used in `fn create_display`
+        depth_buffer: _,          // used in `fn create_display`
+        stencil_buffer: _,        // used in `fn create_display`
+        hardware_acceleration: _, // used in `fn create_display`
+        renderer: _,              // used in `fn run_native`
     } = native_options;
 
     let window_icon = icon_data.clone().and_then(load_icon);
@@ -188,6 +189,7 @@ impl EpiIntegration {
         window: &winit::window::Window,
         storage: Option<Box<dyn epi::Storage>>,
         #[cfg(feature = "glow")] gl: Option<std::sync::Arc<glow::Context>>,
+        #[cfg(feature = "wgpu")] render_state: Option<egui_wgpu::RenderState>,
     ) -> Self {
         let egui_ctx = egui::Context::default();
 
@@ -207,6 +209,8 @@ impl EpiIntegration {
             storage,
             #[cfg(feature = "glow")]
             gl,
+            #[cfg(feature = "wgpu")]
+            render_state,
         };
 
         if prefer_dark_mode == Some(true) {
@@ -293,6 +297,13 @@ impl EpiIntegration {
         self.frame.info.cpu_usage = Some(frame_time);
 
         full_output
+    }
+
+    pub fn post_rendering(&mut self, app: &mut dyn epi::App, window: &winit::window::Window) {
+        let inner_size = window.inner_size();
+        let window_size_px = [inner_size.width, inner_size.height];
+
+        app.post_rendering(window_size_px, &self.frame);
     }
 
     pub fn handle_platform_output(

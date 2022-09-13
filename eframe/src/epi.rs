@@ -29,6 +29,11 @@ pub struct CreationContext<'s> {
     /// you might want to use later from a [`egui::PaintCallback`].
     #[cfg(feature = "glow")]
     pub gl: Option<std::sync::Arc<glow::Context>>,
+
+    /// Can be used to manage GPU resources for custom rendering with WGPU using
+    /// [`egui::PaintCallback`]s.
+    #[cfg(feature = "wgpu")]
+    pub render_state: Option<egui_wgpu::RenderState>,
 }
 
 // ----------------------------------------------------------------------------
@@ -139,6 +144,11 @@ pub trait App {
     fn warm_up_enabled(&self) -> bool {
         false
     }
+
+    /// Called each time after the rendering the UI.
+    ///
+    /// Can be used to access pixel data with `get_pixels`
+    fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &Frame) {}
 }
 
 /// Options controlling the behavior of a native window.
@@ -214,6 +224,11 @@ pub struct NativeOptions {
     /// `egui` doesn't need the stencil buffer, so the default value is 0.
     pub stencil_buffer: u8,
 
+    /// Use hardware acceleration if available. On macOS, this will possibly
+    /// use a dedicated GPU which will lead to higher power consumption.
+    /// The default value is `Some(true)`
+    pub hardware_acceleration: Option<bool>,
+
     /// What rendering backend to use.
     pub renderer: Renderer,
 }
@@ -236,6 +251,7 @@ impl Default for NativeOptions {
             multisampling: 0,
             depth_buffer: 0,
             stencil_buffer: 0,
+            hardware_acceleration: Some(true),
             renderer: Renderer::default(),
         }
     }
@@ -338,6 +354,11 @@ pub struct Frame {
     #[cfg(feature = "glow")]
     #[doc(hidden)]
     pub gl: Option<std::sync::Arc<glow::Context>>,
+
+    /// Can be used to manage GPU resources for custom rendering with WGPU using
+    /// [`egui::PaintCallback`]s.
+    #[cfg(feature = "wgpu")]
+    pub render_state: Option<egui_wgpu::RenderState>,
 }
 
 impl Frame {

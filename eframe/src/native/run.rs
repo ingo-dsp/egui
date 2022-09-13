@@ -17,6 +17,7 @@ fn create_display(
     crate::profile_function!();
     let gl_window = unsafe {
         glutin::ContextBuilder::new()
+            .with_hardware_acceleration(native_options.hardware_acceleration)
             .with_depth_buffer(native_options.depth_buffer)
             .with_multisampling(native_options.multisampling)
             .with_srgb(true)
@@ -62,6 +63,8 @@ pub fn run_glow(
         gl_window.window(),
         storage,
         Some(gl.clone()),
+        #[cfg(feature = "wgpu")]
+        None,
     );
 
     {
@@ -76,6 +79,8 @@ pub fn run_glow(
         integration_info: integration.frame.info(),
         storage: integration.frame.storage(),
         gl: Some(gl.clone()),
+        #[cfg(feature = "wgpu")]
+        render_state: None,
     });
 
     if app.warm_up_enabled() {
@@ -120,6 +125,8 @@ pub fn run_glow(
                 &clipped_primitives,
                 &textures_delta,
             );
+
+            integration.post_rendering(app.as_mut(), window);
 
             {
                 crate::profile_scope!("swap_buffers");
@@ -230,6 +237,8 @@ pub fn run_wgpu(
         painter
     };
 
+    let render_state = painter.get_render_state().expect("Uninitialized");
+
     let mut integration = epi_integration::EpiIntegration::new(
         &event_loop,
         painter.max_texture_side().unwrap_or(2048),
@@ -237,6 +246,7 @@ pub fn run_wgpu(
         storage,
         #[cfg(feature = "glow")]
         None,
+        Some(render_state.clone()),
     );
 
     {
@@ -252,6 +262,7 @@ pub fn run_wgpu(
         storage: integration.frame.storage(),
         #[cfg(feature = "glow")]
         gl: None,
+        render_state: Some(render_state),
     });
 
     if app.warm_up_enabled() {
