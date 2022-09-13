@@ -15,6 +15,7 @@ pub struct RetainedImage {
     texture: Mutex<Option<egui::TextureHandle>>,
     filter: TextureFilter,
 }
+
 impl RetainedImage {
     pub fn from_color_image(debug_name: impl Into<String>, image: ColorImage) -> Self {
         Self {
@@ -97,6 +98,16 @@ impl RetainedImage {
     /// The size of the image data (number of pixels wide/high).
     pub fn size(&self) -> [usize; 2] {
         self.size
+    }
+
+    /// The width of the image.
+    pub fn width(&self) -> usize {
+        self.size[0]
+    }
+
+    /// The height of the image.
+    pub fn height(&self) -> usize {
+        self.size[1]
     }
 
     /// The size of the image data (number of pixels wide/high).

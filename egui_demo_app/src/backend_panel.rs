@@ -53,7 +53,7 @@ pub struct BackendPanel {
     run_mode: RunMode,
 
     #[cfg_attr(feature = "serde", serde(skip))]
-    repaint_after_seocnds: f32,
+    repaint_after_seconds: f32,
 
     /// current slider value for current gui scale
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -70,7 +70,7 @@ impl Default for BackendPanel {
         Self {
             open: false,
             run_mode: Default::default(),
-            repaint_after_seocnds: 1.0,
+            repaint_after_seconds: 1.0,
             pixels_per_point: None,
             frame_history: Default::default(),
             egui_windows: Default::default(),
@@ -91,7 +91,7 @@ impl BackendPanel {
             RunMode::Reactive => {
                 // let the computer rest for a bit
                 ctx.request_repaint_after(std::time::Duration::from_secs_f32(
-                    self.repaint_after_seocnds,
+                    self.repaint_after_seconds,
                 ));
             }
         }
@@ -136,17 +136,11 @@ impl BackendPanel {
             ui.ctx().options().screen_reader = screen_reader;
         }
 
-        if !frame.is_web() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
             ui.separator();
             if ui.button("Quit").clicked() {
                 frame.quit();
-            }
-
-            if ui
-                .button("Drag me to drag window")
-                .is_pointer_button_down_on()
-            {
-                frame.drag_window();
             }
         }
     }
@@ -159,11 +153,10 @@ impl BackendPanel {
             ui.label(".");
         });
 
-        if let Some(web_info) = &frame.info().web_info {
-            ui.collapsing("Web info (location)", |ui| {
-                ui.monospace(format!("{:#?}", web_info.location));
-            });
-        }
+        #[cfg(target_arch = "wasm32")]
+        ui.collapsing("Web info (location)", |ui| {
+            ui.monospace(format!("{:#?}", frame.info().web_info.location));
+        });
 
         // For instance: `eframe` web sets `pixels_per_point` every frame to force
         // egui to use the same scale as the web zoom factor.
@@ -174,15 +167,35 @@ impl BackendPanel {
             }
         }
 
-        if !frame.is_web()
-            && ui
-                .button("📱 Phone Size")
-                .on_hover_text("Resize the window to be small like a phone.")
-                .clicked()
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            // frame.set_window_size(egui::Vec2::new(375.0, 812.0)); // iPhone 12 mini
-            frame.set_window_size(egui::Vec2::new(375.0, 667.0)); //  iPhone SE 2nd gen
-            ui.close_menu();
+            ui.horizontal(|ui| {
+                {
+                    let mut fullscreen = frame.info().window_info.fullscreen;
+                    ui.checkbox(&mut fullscreen, "🗖 Fullscreen")
+                        .on_hover_text("Fullscreen the window");
+                    frame.set_fullscreen(fullscreen);
+                }
+
+                if ui
+                    .button("📱 Phone Size")
+                    .on_hover_text("Resize the window to be small like a phone.")
+                    .clicked()
+                {
+                    // frame.set_window_size(egui::vec2(375.0, 812.0)); // iPhone 12 mini
+                    frame.set_window_size(egui::vec2(375.0, 667.0)); //  iPhone SE 2nd gen
+                    frame.set_fullscreen(false);
+                    ui.close_menu();
+                }
+            });
+
+            if !frame.info().window_info.fullscreen
+                && ui
+                    .button("Drag me to drag window")
+                    .is_pointer_button_down_on()
+            {
+                frame.drag_window();
+            }
         }
     }
 
@@ -249,7 +262,7 @@ impl BackendPanel {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label("(but at least every ");
-                egui::DragValue::new(&mut self.repaint_after_seocnds)
+                egui::DragValue::new(&mut self.repaint_after_seconds)
                     .clamp_range(0.1..=10.0)
                     .speed(0.1)
                     .suffix(" s")

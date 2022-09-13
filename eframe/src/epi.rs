@@ -183,6 +183,11 @@ pub struct NativeOptions {
     /// If false it will be difficult to move and resize the app.
     pub decorated: bool,
 
+    /// Start in (borderless) fullscreen?
+    ///
+    /// Default: `false`.
+    pub fullscreen: bool,
+
     /// On Windows: enable drag and drop support. Drag and drop can
     /// not be disabled on other platforms.
     ///
@@ -193,6 +198,9 @@ pub struct NativeOptions {
     pub drag_and_drop_support: bool,
 
     /// The application icon, e.g. in the Windows task bar etc.
+    ///
+    /// This doesn't work on Mac and on Wayland.
+    /// See <https://docs.rs/winit/latest/winit/window/struct.Window.html#method.set_window_icon> for more.
     pub icon_data: Option<IconData>,
 
     /// The initial (inner) position of the native window in points (logical pixels).
@@ -273,6 +281,7 @@ impl Default for NativeOptions {
             always_on_top: false,
             maximized: false,
             decorated: true,
+            fullscreen: false,
             drag_and_drop_support: true,
             icon_data: None,
             initial_window_pos: None,
@@ -359,6 +368,7 @@ impl Default for WebOptions {
 pub enum Theme {
     /// Dark mode: light text on a dark background.
     Dark,
+
     /// Light mode: dark text on a light background.
     Light,
 }
@@ -383,10 +393,13 @@ impl Theme {
 pub enum WebGlContextOption {
     /// Force Use WebGL1.
     WebGl1,
+
     /// Force use WebGL2.
     WebGl2,
+
     /// Use WebGl2 first.
     BestFirst,
+
     /// Use WebGl1 first
     CompatibilityFirst,
 }
@@ -473,21 +486,17 @@ pub struct IconData {
 /// allocate textures, and change settings (e.g. window size).
 pub struct Frame {
     /// Information about the integration.
-    #[doc(hidden)]
-    pub info: IntegrationInfo,
+    pub(crate) info: IntegrationInfo,
 
     /// Where the app can issue commands back to the integration.
-    #[doc(hidden)]
-    pub output: backend::AppOutput,
+    pub(crate) output: backend::AppOutput,
 
     /// A place where you can store custom data in a way that persists when you restart the app.
-    #[doc(hidden)]
-    pub storage: Option<Box<dyn Storage>>,
+    pub(crate) storage: Option<Box<dyn Storage>>,
 
     /// A reference to the underlying [`glow`] (OpenGL) context.
     #[cfg(feature = "glow")]
-    #[doc(hidden)]
-    pub gl: Option<std::sync::Arc<glow::Context>>,
+    pub(crate) gl: Option<std::sync::Arc<glow::Context>>,
 
     /// Can be used to manage GPU resources for custom rendering with WGPU using
     /// [`egui::PaintCallback`]s.
@@ -497,8 +506,11 @@ pub struct Frame {
 
 impl Frame {
     /// True if you are in a web environment.
+    ///
+    /// Equivalent to `cfg!(target_arch = "wasm32")`
+    #[allow(clippy::unused_self)]
     pub fn is_web(&self) -> bool {
-        self.info.web_info.is_some()
+        cfg!(target_arch = "wasm32")
     }
 
     /// Information about the integration.
@@ -535,27 +547,39 @@ impl Frame {
 
     /// Signal the app to stop/exit/quit the app (only works for native apps, not web apps).
     /// The framework will not quit immediately, but at the end of the this frame.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn quit(&mut self) {
         self.output.quit = true;
     }
 
     /// Set the desired inner size of the window (in egui points).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_window_size(&mut self, size: egui::Vec2) {
         self.output.window_size = Some(size);
     }
 
     /// Set the desired title of the window.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_window_title(&mut self, title: &str) {
         self.output.window_title = Some(title.to_owned());
     }
 
     /// Set whether to show window decorations (i.e. a frame around you app).
+    ///
     /// If false it will be difficult to move and resize the app.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_decorations(&mut self, decorated: bool) {
         self.output.decorated = Some(decorated);
     }
 
-    /// set the position of the outer window
+    /// Turn borderless fullscreen on/off (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.output.fullscreen = Some(fullscreen);
+    }
+
+    /// set the position of the outer window.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_window_pos(&mut self, pos: egui::Pos2) {
         self.output.window_pos = Some(pos);
     }
@@ -564,35 +588,44 @@ impl Frame {
     /// movement of the cursor while the primary mouse button is down.
     ///
     /// Does not work on the web.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn drag_window(&mut self) {
         self.output.drag_window = true;
     }
 
     /// Set the visibility of the window.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_visible(&mut self, visible: bool) {
         self.output.visible = Some(visible);
     }
 
     /// for integrations only: call once per frame
-    #[doc(hidden)]
-    pub fn take_app_output(&mut self) -> backend::AppOutput {
+    pub(crate) fn take_app_output(&mut self) -> backend::AppOutput {
         std::mem::take(&mut self.output)
     }
 }
 
 /// Information about the web environment (if applicable).
 #[derive(Clone, Debug)]
+#[cfg(target_arch = "wasm32")]
 pub struct WebInfo {
     /// Information about the URL.
     pub location: Location,
 }
 
 /// Information about the application's main window, if available.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub struct WindowInfo {
     /// Coordinates of the window's outer top left corner, relative to the top left corner of the first display.
+    ///
     /// Unit: egui points (logical pixels).
-    pub position: egui::Pos2,
+    ///
+    /// `None` = unknown.
+    pub position: Option<egui::Pos2>,
+
+    /// Are we in fullscreen mode?
+    pub fullscreen: bool,
 
     /// Window inner size in egui points (logical pixels).
     pub size: egui::Vec2,
@@ -601,6 +634,7 @@ pub struct WindowInfo {
 /// Information about the URL.
 ///
 /// Everything has been percent decoded (`%20` -> ` ` etc).
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct Location {
     /// The full URL (`location.href`) without the hash.
@@ -655,8 +689,9 @@ pub struct Location {
 /// Information about the integration passed to the use app each frame.
 #[derive(Clone, Debug)]
 pub struct IntegrationInfo {
-    /// If the app is running in a Web context, this returns information about the environment.
-    pub web_info: Option<WebInfo>,
+    /// Information about the surrounding web environment.
+    #[cfg(target_arch = "wasm32")]
+    pub web_info: WebInfo,
 
     /// Does the OS use dark or light mode?
     ///
@@ -670,8 +705,9 @@ pub struct IntegrationInfo {
     /// The OS native pixels-per-point
     pub native_pixels_per_point: Option<f32>,
 
-    /// Window-specific geometry information, if provided by the platform.
-    pub window_info: Option<WindowInfo>,
+    /// The position and size of the native window.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub window_info: WindowInfo,
 }
 
 // ----------------------------------------------------------------------------
@@ -685,6 +721,7 @@ pub struct IntegrationInfo {
 pub trait Storage {
     /// Get the value for the given key.
     fn get_string(&self, key: &str) -> Option<String>;
+
     /// Set the value for the given key.
     fn set_string(&mut self, key: &str, value: String);
 
@@ -700,7 +737,9 @@ impl Storage for DummyStorage {
     fn get_string(&self, _key: &str) -> Option<String> {
         None
     }
+
     fn set_string(&mut self, _key: &str, _value: String) {}
+
     fn flush(&mut self) {}
 }
 
@@ -724,32 +763,42 @@ pub const APP_KEY: &str = "app";
 // ----------------------------------------------------------------------------
 
 /// You only need to look here if you are writing a backend for `epi`.
-#[doc(hidden)]
-pub mod backend {
+pub(crate) mod backend {
     /// Action that can be taken by the user app.
     #[derive(Clone, Debug, Default)]
     #[must_use]
     pub struct AppOutput {
         /// Set to `true` to stop the app.
         /// This does nothing for web apps.
+        #[cfg(not(target_arch = "wasm32"))]
         pub quit: bool,
 
         /// Set to some size to resize the outer window (e.g. glium window) to this size.
+        #[cfg(not(target_arch = "wasm32"))]
         pub window_size: Option<egui::Vec2>,
 
         /// Set to some string to rename the outer window (e.g. glium window) to this title.
+        #[cfg(not(target_arch = "wasm32"))]
         pub window_title: Option<String>,
 
         /// Set to some bool to change window decorations.
+        #[cfg(not(target_arch = "wasm32"))]
         pub decorated: Option<bool>,
 
+        /// Set to some bool to change window fullscreen.
+        #[cfg(not(target_arch = "wasm32"))] // TODO: implement fullscreen on web
+        pub fullscreen: Option<bool>,
+
         /// Set to true to drag window while primary mouse button is down.
+        #[cfg(not(target_arch = "wasm32"))]
         pub drag_window: bool,
 
         /// Set to some position to move the outer window (e.g. glium window) to this position
+        #[cfg(not(target_arch = "wasm32"))]
         pub window_pos: Option<egui::Pos2>,
 
         /// Set to some bool to change window visibility.
+        #[cfg(not(target_arch = "wasm32"))]
         pub visible: Option<bool>,
     }
 }

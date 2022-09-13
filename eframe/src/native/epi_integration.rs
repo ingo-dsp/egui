@@ -9,25 +9,24 @@ pub fn points_to_size(points: egui::Vec2) -> winit::dpi::LogicalSize<f64> {
     }
 }
 
-pub fn read_window_info(
-    window: &winit::window::Window,
-    pixels_per_point: f32,
-) -> Option<WindowInfo> {
-    match window.outer_position() {
-        Ok(pos) => {
-            let pos = pos.to_logical::<f32>(pixels_per_point.into());
-            let size = window
-                .inner_size()
-                .to_logical::<f32>(pixels_per_point.into());
-            Some(WindowInfo {
-                position: egui::Pos2 { x: pos.x, y: pos.y },
-                size: egui::Vec2 {
-                    x: size.width,
-                    y: size.height,
-                },
-            })
-        }
-        Err(_) => None,
+pub fn read_window_info(window: &winit::window::Window, pixels_per_point: f32) -> WindowInfo {
+    let position = window
+        .outer_position()
+        .ok()
+        .map(|pos| pos.to_logical::<f32>(pixels_per_point.into()))
+        .map(|pos| egui::Pos2 { x: pos.x, y: pos.y });
+
+    let size = window
+        .inner_size()
+        .to_logical::<f32>(pixels_per_point.into());
+
+    WindowInfo {
+        position,
+        fullscreen: window.fullscreen().is_some(),
+        size: egui::Vec2 {
+            x: size.width,
+            y: size.height,
+        },
     }
 }
 
@@ -39,6 +38,7 @@ pub fn window_builder(
         always_on_top,
         maximized,
         decorated,
+        fullscreen,
         drag_and_drop_support,
         icon_data,
         initial_window_pos,
@@ -54,8 +54,9 @@ pub fn window_builder(
 
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_always_on_top(*always_on_top)
-        .with_maximized(*maximized)
         .with_decorations(*decorated)
+        .with_fullscreen(fullscreen.then(|| winit::window::Fullscreen::Borderless(None)))
+        .with_maximized(*maximized)
         .with_resizable(*resizable)
         .with_transparent(*transparent)
         .with_window_icon(window_icon);
@@ -118,6 +119,7 @@ pub fn handle_app_output(
         window_size,
         window_title,
         decorated,
+        fullscreen,
         drag_window,
         window_pos,
         visible,
@@ -135,6 +137,10 @@ pub fn handle_app_output(
             }
             .to_logical::<f32>(native_pixels_per_point(window) as f64),
         );
+    }
+
+    if let Some(fullscreen) = fullscreen {
+        window.set_fullscreen(fullscreen.then(|| winit::window::Fullscreen::Borderless(None)));
     }
 
     if let Some(window_title) = window_title {
@@ -198,7 +204,6 @@ impl EpiIntegration {
 
         let frame = epi::Frame {
             info: epi::IntegrationInfo {
-                web_info: None,
                 system_theme,
                 cpu_usage: None,
                 native_pixels_per_point: Some(native_pixels_per_point(window)),
@@ -349,6 +354,7 @@ impl EpiIntegration {
 
 #[cfg(feature = "persistence")]
 const STORAGE_EGUI_MEMORY_KEY: &str = "egui";
+
 #[cfg(feature = "persistence")]
 const STORAGE_WINDOW_KEY: &str = "window";
 

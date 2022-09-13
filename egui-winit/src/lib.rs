@@ -70,9 +70,14 @@ impl State {
     }
 
     pub fn new_with_wayland_display(wayland_display: Option<*mut c_void>) -> Self {
+        let egui_input = egui::RawInput {
+            has_focus: false, // winit will tell us when we have focus
+            ..Default::default()
+        };
+
         Self {
             start_time: instant::Instant::now(),
-            egui_input: Default::default(),
+            egui_input,
             pointer_pos_in_points: None,
             any_pointer_button_down: false,
             current_cursor_icon: egui::CursorIcon::Default,
@@ -214,7 +219,8 @@ impl State {
                 egui_ctx.wants_keyboard_input()
                     || input.virtual_keycode == Some(winit::event::VirtualKeyCode::Tab)
             }
-            WindowEvent::Focused(_) => {
+            WindowEvent::Focused(has_focus) => {
+                self.egui_input.has_focus = *has_focus;
                 // We will not be given a KeyboardInput event when the modifiers are released while
                 // the window does not have focus. Unset all modifier state to be safe.
                 self.egui_input.modifiers = egui::Modifiers::default();
@@ -735,6 +741,7 @@ macro_rules! profile_function {
         puffin::profile_function!($($arg)*);
     };
 }
+
 #[allow(unused_imports)]
 pub(crate) use profile_function;
 
@@ -746,5 +753,6 @@ macro_rules! profile_scope {
         puffin::profile_scope!($($arg)*);
     };
 }
+
 #[allow(unused_imports)]
 pub(crate) use profile_scope;

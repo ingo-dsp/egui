@@ -25,6 +25,7 @@ pub type TextureFilter = egui::TextureFilter;
 trait TextureFilterExt {
     fn glow_code(&self) -> u32;
 }
+
 impl TextureFilterExt for TextureFilter {
     fn glow_code(&self) -> u32 {
         match self {
@@ -472,6 +473,8 @@ impl Painter {
             }
 
             check_for_gl_error!(&self.gl, "paint_mesh");
+        } else {
+            tracing::warn!("Failed to find texture {:?}", mesh.texture_id);
         }
     }
 
@@ -728,16 +731,17 @@ fn set_clip_rect(
     let clip_max_x = pixels_per_point * clip_rect.max.x;
     let clip_max_y = pixels_per_point * clip_rect.max.y;
 
-    // Make sure clip rect can fit within a `u32`:
-    let clip_min_x = clip_min_x.clamp(0.0, size_in_pixels.0 as f32);
-    let clip_min_y = clip_min_y.clamp(0.0, size_in_pixels.1 as f32);
-    let clip_max_x = clip_max_x.clamp(clip_min_x, size_in_pixels.0 as f32);
-    let clip_max_y = clip_max_y.clamp(clip_min_y, size_in_pixels.1 as f32);
-
+    // Round to integer:
     let clip_min_x = clip_min_x.round() as i32;
     let clip_min_y = clip_min_y.round() as i32;
     let clip_max_x = clip_max_x.round() as i32;
     let clip_max_y = clip_max_y.round() as i32;
+
+    // Clamp:
+    let clip_min_x = clip_min_x.clamp(0, size_in_pixels.0 as i32);
+    let clip_min_y = clip_min_y.clamp(0, size_in_pixels.1 as i32);
+    let clip_max_x = clip_max_x.clamp(clip_min_x, size_in_pixels.0 as i32);
+    let clip_max_y = clip_max_y.clamp(clip_min_y, size_in_pixels.1 as i32);
 
     unsafe {
         gl.scissor(

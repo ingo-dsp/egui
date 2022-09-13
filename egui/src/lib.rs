@@ -375,7 +375,7 @@ pub fn warn_if_debug_build(ui: &mut crate::Ui) {
         ui.label(
             RichText::new("‼ Debug build ‼")
                 .small()
-                .color(crate::Color32::RED),
+                .color(ui.visuals().warn_fg_color),
         )
         .on_hover_text("egui was compiled with debug assertions enabled.");
     }
@@ -479,15 +479,19 @@ macro_rules! egui_assert {
 pub mod special_emojis {
     /// Tux, the Linux penguin.
     pub const OS_LINUX: char = '🐧';
+
     /// The Windows logo.
     pub const OS_WINDOWS: char = '';
+
     /// The Android logo.
     pub const OS_ANDROID: char = '';
+
     /// The Apple logo.
     pub const OS_APPLE: char = '';
 
     /// The Github logo.
     pub const GITHUB: char = '';
+
     /// The Twitter bird.
     pub const TWITTER: char = '';
 

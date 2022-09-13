@@ -17,6 +17,7 @@ NOTE: [`epaint`](epaint/CHANGELOG.md), [`eframe`](eframe/CHANGELOG.md), [`egui-w
 * Added support for using `PaintCallback` shapes with the WGPU backend ([#1684](https://github.com/emilk/egui/pull/1684)).
 * Added `Contex::request_repaint_after` ([#1694](https://github.com/emilk/egui/pull/1694)).
 * `ctrl-h` now acts like backspace in `TextEdit` ([#1812](https://github.com/emilk/egui/pull/1812)).
+* Added `RawInput::has_focus` which backends can set to indicate whether the UI as a whole has the keyboard focus ([#1859](https://github.com/emilk/egui/pull/1859)).
 
 ### Changed
 * MSRV (Minimum Supported Rust Version) is now `1.61.0` ([#1846](https://github.com/emilk/egui/pull/1846)).
@@ -31,6 +32,8 @@ NOTE: [`epaint`](epaint/CHANGELOG.md), [`eframe`](eframe/CHANGELOG.md), [`egui-w
 * Fixed `Plot` auto-bounds bug ([#1599](https://github.com/emilk/egui/pull/1599)).
 * Fixed dead-lock when alt-tabbing while also showing a tooltip ([#1618](https://github.com/emilk/egui/pull/1618)).
 * Fixed `ScrollArea` scrolling when editing an unrelated `TextEdit` ([#1779](https://github.com/emilk/egui/pull/1779)).
+* Fixed focus behavior when pressing Tab in a UI with no focused widget ([#1861](https://github.com/emilk/egui/pull/1861)).
+* Fixed automatic plot bounds ([#1865](https://github.com/emilk/egui/pull/1865)).
 
 
 ## 0.18.1 - 2022-05-01

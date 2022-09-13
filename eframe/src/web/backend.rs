@@ -178,13 +178,12 @@ impl AppRunner {
         };
 
         let info = epi::IntegrationInfo {
-            web_info: Some(epi::WebInfo {
+            web_info: epi::WebInfo {
                 location: web_location(),
-            }),
+            },
             system_theme,
             cpu_usage: None,
             native_pixels_per_point: Some(native_pixels_per_point()),
-            window_info: None,
         };
         let storage = LocalStorage::default();
 
@@ -310,15 +309,7 @@ impl AppRunner {
 
         {
             let app_output = self.frame.take_app_output();
-            let epi::backend::AppOutput {
-                quit: _,         // Can't quit a web page
-                window_size: _,  // Can't resize a web page
-                window_title: _, // TODO(emilk): change title of window
-                decorated: _,    // Can't toggle decorations
-                drag_window: _,  // Can't be dragged
-                window_pos: _,   // Can't set position of a web page
-                visible: _,      // Can't hide a web page
-            } = app_output;
+            let epi::backend::AppOutput {} = app_output;
         }
 
         self.frame.info.cpu_usage = Some((now_sec() - frame_start) as f32);
@@ -386,6 +377,7 @@ pub type AppRunnerRef = Arc<Mutex<AppRunner>>;
 
 pub struct AppRunnerContainer {
     pub runner: AppRunnerRef,
+
     /// Set to `true` if there is a panic.
     /// Used to ignore callbacks after a panic.
     pub panicked: Arc<AtomicBool>,
@@ -480,8 +472,10 @@ impl epi::Storage for LocalStorage {
     fn get_string(&self, key: &str) -> Option<String> {
         local_storage_get(key)
     }
+
     fn set_string(&mut self, key: &str, value: String) {
         local_storage_set(key, &value);
     }
+
     fn flush(&mut self) {}
 }

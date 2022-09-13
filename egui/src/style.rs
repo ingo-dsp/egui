@@ -341,15 +341,15 @@ impl Margin {
 
     /// Total margins on both sides
     pub fn sum(&self) -> Vec2 {
-        Vec2::new(self.left + self.right, self.top + self.bottom)
+        vec2(self.left + self.right, self.top + self.bottom)
     }
 
     pub fn left_top(&self) -> Vec2 {
-        Vec2::new(self.left, self.top)
+        vec2(self.left, self.top)
     }
 
     pub fn right_bottom(&self) -> Vec2 {
-        Vec2::new(self.right, self.bottom)
+        vec2(self.right, self.bottom)
     }
 }
 
@@ -367,6 +367,7 @@ impl From<Vec2> for Margin {
 
 impl std::ops::Add for Margin {
     type Output = Self;
+
     fn add(self, other: Self) -> Self {
         Self {
             left: self.left + other.left,
@@ -446,6 +447,12 @@ pub struct Visuals {
     /// Background color behind code-styled monospaced labels.
     pub code_bg_color: Color32,
 
+    /// A good color for warning text (e.g. orange).
+    pub warn_fg_color: Color32,
+
+    /// A good color for error text (e.g. red).
+    pub error_fg_color: Color32,
+
     pub window_rounding: Rounding,
     pub window_shadow: Shadow,
 
@@ -518,12 +525,16 @@ pub struct Widgets {
     /// * `noninteractive.bg_fill` is the background color of windows.
     /// * `noninteractive.fg_stroke` is the normal text color.
     pub noninteractive: WidgetVisuals,
+
     /// The style of an interactive widget, such as a button, at rest.
     pub inactive: WidgetVisuals,
+
     /// The style of an interactive widget while you hover it.
     pub hovered: WidgetVisuals,
+
     /// The style of an interactive widget as you are clicking or dragging it.
     pub active: WidgetVisuals,
+
     /// The style of a button that has an open menu beneath it (e.g. a combo-box)
     pub open: WidgetVisuals,
 }
@@ -669,6 +680,8 @@ impl Visuals {
             faint_bg_color: Color32::from_gray(35),
             extreme_bg_color: Color32::from_gray(10), // e.g. TextEdit background
             code_bg_color: Color32::from_gray(64),
+            warn_fg_color: Color32::from_rgb(255, 143, 0), // orange
+            error_fg_color: Color32::from_rgb(255, 0, 0),  // red
             window_rounding: Rounding::same(6.0),
             window_shadow: Shadow::big_dark(),
             popup_shadow: Shadow::small_dark(),
@@ -691,6 +704,8 @@ impl Visuals {
             faint_bg_color: Color32::from_gray(242),
             extreme_bg_color: Color32::from_gray(255), // e.g. TextEdit background
             code_bg_color: Color32::from_gray(230),
+            warn_fg_color: Color32::from_rgb(255, 0, 0), // red also, beecause orange doesn't look great because of https://github.com/emilk/egui/issues/1455
+            error_fg_color: Color32::from_rgb(255, 0, 0), // red
             window_shadow: Shadow::big_light(),
             popup_shadow: Shadow::small_light(),
             ..Self::dark()
@@ -711,6 +726,7 @@ impl Selection {
             stroke: Stroke::new(1.0, Color32::from_rgb(192, 222, 255)),
         }
     }
+
     fn light() -> Self {
         Self {
             bg_fill: Color32::from_rgb(144, 209, 255),
@@ -1140,6 +1156,8 @@ impl Visuals {
             faint_bg_color,
             extreme_bg_color,
             code_bg_color,
+            warn_fg_color,
+            error_fg_color,
             window_rounding,
             window_shadow,
             popup_shadow,
@@ -1175,11 +1193,16 @@ impl Visuals {
         ui.collapsing("Widgets", |ui| widgets.ui(ui));
         ui.collapsing("Selection", |ui| selection.ui(ui));
 
-        ui_color(
-            ui,
-            &mut widgets.noninteractive.fg_stroke.color,
-            "Text color",
-        );
+        ui.horizontal(|ui| {
+            ui_color(
+                ui,
+                &mut widgets.noninteractive.fg_stroke.color,
+                "Text color",
+            );
+            ui_color(ui, warn_fg_color, RichText::new("Warnings"));
+            ui_color(ui, error_fg_color, RichText::new("Errors"));
+        });
+
         ui_color(ui, code_bg_color, RichText::new("Code background").code()).on_hover_ui(|ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;

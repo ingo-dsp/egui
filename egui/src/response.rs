@@ -212,8 +212,14 @@ impl Response {
     }
 
     /// This widget has the keyboard focus (i.e. is receiving key presses).
+    ///
+    /// This function only returns true if the UI as a whole (e.g. window)
+    /// also has the keyboard focus. That makes this function suitable
+    /// for style choices, e.g. a thicker border around focused widgets.
     pub fn has_focus(&self) -> bool {
-        self.ctx.memory().has_focus(self.id)
+        // Access input and memory in separate statements to prevent deadlock.
+        let has_global_focus = self.ctx.input().raw.has_focus;
+        has_global_focus && self.ctx.memory().has_focus(self.id)
     }
 
     /// True if this widget has keyboard focus this frame, but didn't last frame.
@@ -457,6 +463,7 @@ impl Response {
     /// if response.clicked() { /* … */ }
     /// # });
     /// ```
+    #[must_use]
     pub fn interact(&self, sense: Sense) -> Self {
         self.ctx.interact_with_hovered(
             self.layer_id,
@@ -596,6 +603,7 @@ impl Response {
 /// Now `draw_vec2(ui, foo).hovered` is true if either [`DragValue`](crate::DragValue) were hovered.
 impl std::ops::BitOr for Response {
     type Output = Self;
+
     fn bitor(self, rhs: Self) -> Self {
         self.union(rhs)
     }
@@ -637,6 +645,7 @@ impl std::ops::BitOrAssign for Response {
 pub struct InnerResponse<R> {
     /// What the user closure returned.
     pub inner: R,
+
     /// The response of the area.
     pub response: Response,
 }
