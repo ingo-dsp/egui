@@ -466,7 +466,14 @@ fn paint_and_schedule(runner_ref: AppRunnerRef) -> Result<(), JsValue> {
     fn paint_if_needed(runner_ref: &AppRunnerRef) -> Result<(), JsValue> {
         let mut runner_lock = runner_ref.0.lock();
         if runner_lock.needs_repaint.fetch_and_clear() {
-            let (needs_repaint, clipped_meshes) = runner_lock.logic()?;
+            let (mut needs_repaint, clipped_meshes) = runner_lock.logic()?;
+
+            // BEGIN ADDED
+            runner_lock.clear().expect("Could not clear background");
+            let canvas_size = runner_lock.egui_ctx().input().screen_rect.size();
+            needs_repaint |= runner_lock.render_gl(canvas_size);
+            // END ADDED
+
             runner_lock.paint(clipped_meshes)?;
             if needs_repaint {
                 runner_lock.needs_repaint.set_true();

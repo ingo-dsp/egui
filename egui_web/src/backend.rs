@@ -3,14 +3,20 @@ use crate::*;
 use egui::TexturesDelta;
 pub use egui::{pos2, Color32};
 
+// BEGIN ADDED
+use egui::Vec2;
+pub type NeedsRender = bool;
+use crate::glow_wrapping::WrappedGlowPainter;
+// BEGIN ADDED
+
 // ----------------------------------------------------------------------------
 
-fn create_painter(canvas_id: &str) -> Result<Box<dyn Painter>, JsValue> {
+fn create_painter(canvas_id: &str) -> Result<WrappedGlowPainter, JsValue> {
+    // BEGIN CHANGED
     // Glow takes precedence:
     #[cfg(all(feature = "glow"))]
-    return Ok(Box::new(
-        crate::glow_wrapping::WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?,
-    ));
+    return Ok(crate::glow_wrapping::WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?);
+    // END CHANGED
 
     #[cfg(all(feature = "webgl", not(feature = "glow")))]
     if let Ok(webgl2_painter) = webgl2::WebGl2Painter::new(canvas_id) {
@@ -84,7 +90,9 @@ impl epi::backend::RepaintSignal for NeedRepaint {
 pub struct AppRunner {
     pub(crate) frame: epi::Frame,
     egui_ctx: egui::Context,
-    painter: Box<dyn Painter>,
+    // BEGIN CHANGED
+    painter: WrappedGlowPainter,
+    // END CHANGED
     pub(crate) input: WebInput,
     app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
@@ -153,6 +161,18 @@ impl AppRunner {
 
         Ok(runner)
     }
+
+    // BEGIN ADDED
+    pub fn render_gl(&mut self, _canvas_size: Vec2) -> NeedsRender {
+        let gl = &self.painter.glow_ctx;
+        let needs_render = self.app.render_gl(&Box::new(gl));
+        needs_render
+    }
+    pub fn clear(&mut self) -> Result<(), JsValue> {
+        self.painter.clear(self.app.clear_color());
+        Ok(())
+    }
+    // END ADDED
 
     pub fn egui_ctx(&self) -> &egui::Context {
         &self.egui_ctx
@@ -227,7 +247,10 @@ impl AppRunner {
             self.painter.set_texture(id, &image_delta);
         }
 
-        self.painter.clear(self.app.clear_color());
+        // BEGIN REMOVED
+        //// self.painter.clear(self.app.clear_color());
+        // END REMOVED
+
         self.painter
             .paint_meshes(clipped_meshes, self.egui_ctx.pixels_per_point())?;
 

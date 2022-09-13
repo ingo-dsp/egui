@@ -120,6 +120,9 @@ pub trait App {
     /// Also allows you to restore state, if there is a storage (required the "persistence" feature).
     fn setup(&mut self, _ctx: &egui::Context, _frame: &Frame, _storage: Option<&dyn Storage>) {}
 
+    /// Added by ingo
+    fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool;
+
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///
     /// Only called when the "persistence" feature is enabled.
