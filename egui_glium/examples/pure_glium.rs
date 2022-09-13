@@ -8,7 +8,7 @@ fn main() {
     let event_loop = glutin::event_loop::EventLoop::with_user_event();
     let display = create_display(&event_loop);
 
-    let mut egui_glium = egui_glium::EguiGlium::new(&display);
+    let mut egui_glium = egui_glium::EguiGlium::new(&display, &event_loop);
 
     event_loop.run(move |event, _, control_flow| {
         let mut redraw = || {
@@ -64,7 +64,7 @@ fn main() {
 
                 egui_glium.on_event(&event);
 
-                display.gl_window().window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                display.gl_window().window().request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
             }
 
             _ => (),

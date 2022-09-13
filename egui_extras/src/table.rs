@@ -296,7 +296,7 @@ impl<'a> Table<'a> {
 
         let bottom = ui.min_rect().bottom();
 
-        // TODO: fix frame-delay by interacting before laying out (but painting later).
+        // TODO(emilk): fix frame-delay by interacting before laying out (but painting later).
         if let Some(resize_id) = resize_id {
             let spacing_x = ui.spacing().item_spacing.x;
             let mut x = avail_rect.left() - spacing_x * 0.5;
@@ -394,7 +394,7 @@ impl<'a> TableBody<'a> {
 
     /// Add a single row with the given height.
     ///
-    /// If you have many thousands of row it can be more performant to instead use [`Self::rows]` or [`Self::heterogeneous_rows`].
+    /// If you have many thousands of row it can be more performant to instead use [`Self::rows`] or [`Self::heterogeneous_rows`].
     pub fn row(&mut self, height: f32, row: impl FnOnce(TableRow<'a, '_>)) {
         row(TableRow {
             layout: &mut self.layout,

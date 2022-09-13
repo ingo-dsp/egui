@@ -21,14 +21,14 @@ pub enum TextStyle {
     /// Normal labels. Easily readable, doesn't take up too much space.
     Body,
 
-    /// Same size as [`Self::Body]`, but used when monospace is important (for aligning number, code snippets, etc).
+    /// Same size as [`Self::Body`], but used when monospace is important (for aligning number, code snippets, etc).
     Monospace,
 
-    /// Buttons. Maybe slightly bigger than [`Self::Body]`.
+    /// Buttons. Maybe slightly bigger than [`Self::Body`].
     /// Signifies that he item is interactive.
     Button,
 
-    /// Heading. Probably larger than [`Self::Body]`.
+    /// Heading. Probably larger than [`Self::Body`].
     Heading,
 
     /// A user-chosen style, found in [`Style::text_styles`].
@@ -204,7 +204,7 @@ pub struct Style {
 }
 
 impl Style {
-    // TODO: rename style.interact() to maybe... `style.interactive` ?
+    // TODO(emilk): rename style.interact() to maybe... `style.interactive` ?
     /// Use this style for interactive things.
     /// Note that you must already have a response,
     /// i.e. you must allocate space and interact BEFORE painting the widget!
@@ -258,10 +258,10 @@ pub struct Spacing {
     /// Minimum size of a [`DragValue`], color picker button, and other small widgets.
     /// `interact_size.y` is the default height of button, slider, etc.
     /// Anything clickable should be (at least) this size.
-    pub interact_size: Vec2, // TODO: rename min_interact_size ?
+    pub interact_size: Vec2, // TODO(emilk): rename min_interact_size ?
 
     /// Default width of a [`Slider`] and [`ComboBox`](crate::ComboBox).
-    pub slider_width: f32, // TODO: rename big_interact_size ?
+    pub slider_width: f32, // TODO(emilk): rename big_interact_size ?
 
     /// Default width of a [`TextEdit`].
     pub text_edit_width: f32,
@@ -1226,7 +1226,7 @@ impl DebugOptions {
     }
 }
 
-// TODO: improve and standardize `slider_vec2`
+// TODO(emilk): improve and standardize `slider_vec2`
 fn slider_vec2<'a>(
     value: &'a mut Vec2,
     range: std::ops::RangeInclusive<f32>,

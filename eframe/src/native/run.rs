@@ -51,12 +51,13 @@ pub fn run_glow(
     let window_builder =
         epi_integration::window_builder(native_options, &window_settings).with_title(app_name);
     let (gl_window, gl) = create_display(native_options, window_builder, &event_loop);
-    let gl = std::rc::Rc::new(gl);
+    let gl = std::sync::Arc::new(gl);
 
     let mut painter = egui_glow::Painter::new(gl.clone(), None, "")
         .unwrap_or_else(|error| panic!("some OpenGL error occurred {}\n", error));
 
     let mut integration = epi_integration::EpiIntegration::new(
+        &event_loop,
         painter.max_texture_side(),
         gl_window.window(),
         storage,
@@ -180,7 +181,7 @@ pub fn run_glow(
                 if integration.should_quit() {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
-                window.request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                window.request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
             }
             winit::event::Event::LoopDestroyed => {
                 integration.save(&mut *app, window);
@@ -193,7 +194,7 @@ pub fn run_glow(
     });
 }
 
-// TODO: merge with with the clone above
+// TODO(emilk): merge with with the clone above
 /// Run an egui app
 #[cfg(feature = "wgpu")]
 pub fn run_wgpu(
@@ -213,11 +214,25 @@ pub fn run_wgpu(
     // SAFETY: `window` must outlive `painter`.
     #[allow(unsafe_code)]
     let mut painter = unsafe {
-        egui_wgpu::winit::Painter::new(&window, native_options.multisampling.max(1) as _)
+        let mut painter = egui_wgpu::winit::Painter::new(
+            wgpu::Backends::PRIMARY | wgpu::Backends::GL,
+            wgpu::PowerPreference::HighPerformance,
+            wgpu::DeviceDescriptor {
+                label: None,
+                features: wgpu::Features::default(),
+                limits: wgpu::Limits::default(),
+            },
+            wgpu::PresentMode::Fifo,
+            native_options.multisampling.max(1) as _,
+        );
+        #[cfg(not(target_os = "android"))]
+        painter.set_window(Some(&window));
+        painter
     };
 
     let mut integration = epi_integration::EpiIntegration::new(
-        painter.max_texture_side(),
+        &event_loop,
+        painter.max_texture_side().unwrap_or(2048),
         &window,
         storage,
         #[cfg(feature = "glow")]
@@ -303,6 +318,15 @@ pub fn run_wgpu(
             winit::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
             winit::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 
+            #[cfg(target_os = "android")]
+            winit::event::Event::Resumed => unsafe {
+                painter.set_window(Some(&window));
+            },
+            #[cfg(target_os = "android")]
+            winit::event::Event::Paused => unsafe {
+                painter.set_window(None);
+            },
+
             winit::event::Event::WindowEvent { event, .. } => {
                 match &event {
                     winit::event::WindowEvent::Focused(new_focused) => {
@@ -329,7 +353,7 @@ pub fn run_wgpu(
                 if integration.should_quit() {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
-                window.request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                window.request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
             }
             winit::event::Event::LoopDestroyed => {
                 integration.save(&mut *app, window);

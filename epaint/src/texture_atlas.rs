@@ -1,6 +1,6 @@
 use emath::{remap_clamp, Rect};
 
-use crate::{FontImage, ImageDelta};
+use crate::{textures::TextureFilter, FontImage, ImageDelta};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rectu {
@@ -87,7 +87,7 @@ impl TextureAtlas {
         image[pos] = 1.0;
 
         // Allocate a series of anti-aliased discs used to render small filled circles:
-        // TODO: these circles can be packed A LOT better.
+        // TODO(emilk): these circles can be packed A LOT better.
         // In fact, the whole texture atlas could be packed a lot better.
         // for r in [1, 2, 4, 8, 16, 32, 64] {
         //     let w = 2 * r + 3;
@@ -176,12 +176,12 @@ impl TextureAtlas {
         if dirty == Rectu::NOTHING {
             None
         } else if dirty == Rectu::EVERYTHING {
-            Some(ImageDelta::full(self.image.clone()))
+            Some(ImageDelta::full(self.image.clone(), TextureFilter::Linear))
         } else {
             let pos = [dirty.min_x, dirty.min_y];
             let size = [dirty.max_x - dirty.min_x, dirty.max_y - dirty.min_y];
             let region = self.image.region(pos, size);
-            Some(ImageDelta::partial(pos, region))
+            Some(ImageDelta::partial(pos, region, TextureFilter::Linear))
         }
     }
 

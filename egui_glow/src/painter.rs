@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use egui::{
     emath::Rect,
@@ -20,20 +20,13 @@ pub use glow::Context;
 const VERT_SRC: &str = include_str!("shader/vertex.glsl");
 const FRAG_SRC: &str = include_str!("shader/fragment.glsl");
 
-#[derive(Copy, Clone)]
-pub enum TextureFilter {
-    Linear,
-    Nearest,
-}
+pub type TextureFilter = egui::TextureFilter;
 
-impl Default for TextureFilter {
-    fn default() -> Self {
-        TextureFilter::Linear
-    }
+trait TextureFilterExt {
+    fn glow_code(&self) -> u32;
 }
-
-impl TextureFilter {
-    pub(crate) fn glow_code(&self) -> u32 {
+impl TextureFilterExt for TextureFilter {
+    fn glow_code(&self) -> u32 {
         match self {
             TextureFilter::Linear => glow::LINEAR,
             TextureFilter::Nearest => glow::NEAREST,
@@ -50,7 +43,7 @@ impl TextureFilter {
 /// objects have been properly deleted and are not leaked.
 pub struct Painter {
     // BEGIN CHANGED
-    pub gl: Rc<glow::Context>,
+    pub gl: Arc<glow::Context>,
     // END CHANGED
     max_texture_side: usize,
 
@@ -61,15 +54,13 @@ pub struct Painter {
     is_embedded: bool,
     vao: crate::vao::VertexArrayObject,
     srgb_support: bool,
-    /// The filter used for subsequent textures.
-    texture_filter: TextureFilter,
     post_process: Option<PostProcess>,
     vbo: glow::Buffer,
     element_array_buffer: glow::Buffer,
 
     textures: HashMap<egui::TextureId, glow::Texture>,
 
-    next_native_tex_id: u64, // TODO: 128-bit texture space?
+    next_native_tex_id: u64,
 
     /// Stores outdated OpenGL textures that are yet to be deleted
     textures_to_destroy: Vec<glow::Texture>,
@@ -92,7 +83,7 @@ impl Painter {
     /// * failed to create postprocess on webgl with `sRGB` support
     /// * failed to create buffer
     pub fn new(
-        gl: Rc<glow::Context>,
+        gl: Arc<glow::Context>,
         pp_fb_extent: Option<[i32; 2]>,
         shader_prefix: &str,
     ) -> Result<Painter, String> {
@@ -217,7 +208,6 @@ impl Painter {
                 is_embedded: matches!(shader_version, ShaderVersion::Es100 | ShaderVersion::Es300),
                 vao,
                 srgb_support,
-                texture_filter: Default::default(),
                 post_process,
                 vbo,
                 element_array_buffer,
@@ -230,7 +220,7 @@ impl Painter {
     }
 
     /// Access the shared glow context.
-    pub fn gl(&self) -> &std::rc::Rc<glow::Context> {
+    pub fn gl(&self) -> &Arc<glow::Context> {
         &self.gl
     }
 
@@ -461,12 +451,6 @@ impl Painter {
         }
     }
 
-    // Set the filter to be used for any subsequent textures loaded via
-    // [`Self::set_texture`].
-    pub fn set_texture_filter(&mut self, texture_filter: TextureFilter) {
-        self.texture_filter = texture_filter;
-    }
-
     // ------------------------------------------------------------------------
 
     pub fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
@@ -492,7 +476,7 @@ impl Painter {
 
                 let data: &[u8] = bytemuck::cast_slice(image.pixels.as_ref());
 
-                self.upload_texture_srgb(delta.pos, image.size, data);
+                self.upload_texture_srgb(delta.pos, image.size, delta.filter, data);
             }
             egui::ImageData::Font(image) => {
                 assert_eq!(
@@ -511,12 +495,18 @@ impl Painter {
                     .flat_map(|a| a.to_array())
                     .collect();
 
-                self.upload_texture_srgb(delta.pos, image.size, &data);
+                self.upload_texture_srgb(delta.pos, image.size, delta.filter, &data);
             }
         };
     }
 
-    fn upload_texture_srgb(&mut self, pos: Option<[usize; 2]>, [w, h]: [usize; 2], data: &[u8]) {
+    fn upload_texture_srgb(
+        &mut self,
+        pos: Option<[usize; 2]>,
+        [w, h]: [usize; 2],
+        texture_filter: TextureFilter,
+        data: &[u8],
+    ) {
         assert_eq!(data.len(), w * h * 4);
         assert!(
             w >= 1 && h >= 1,
@@ -536,12 +526,12 @@ impl Painter {
             self.gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_MAG_FILTER,
-                self.texture_filter.glow_code() as i32,
+                texture_filter.glow_code() as i32,
             );
             self.gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_MIN_FILTER,
-                self.texture_filter.glow_code() as i32,
+                texture_filter.glow_code() as i32,
             );
 
             self.gl.tex_parameter_i32(

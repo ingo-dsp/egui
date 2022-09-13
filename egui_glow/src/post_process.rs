@@ -7,7 +7,7 @@ use glow::HasContext as _;
 /// Uses a framebuffer to render everything in linear color space and convert it back to `sRGB`
 /// in a separate "post processing" step
 pub(crate) struct PostProcess {
-    gl: std::rc::Rc<glow::Context>,
+    gl: std::sync::Arc<glow::Context>,
     pos_buffer: glow::Buffer,
     index_buffer: glow::Buffer,
     vao: crate::vao::VertexArrayObject,
@@ -21,7 +21,7 @@ pub(crate) struct PostProcess {
 
 impl PostProcess {
     pub(crate) unsafe fn new(
-        gl: std::rc::Rc<glow::Context>,
+        gl: std::sync::Arc<glow::Context>,
         shader_prefix: &str,
         is_webgl_1: bool,
         [width, height]: [i32; 2],
@@ -88,7 +88,7 @@ impl PostProcess {
 
         // ---------------------------------------------------------
         // Depth buffer - we only need this when embedding 3D within egui using `egui::PaintCallback`.
-        // TODO: add a setting to enable/disable the depth buffer.
+        // TODO(emilk): add a setting to enable/disable the depth buffer.
 
         let with_depth_buffer = true;
         let depth_renderbuffer = if with_depth_buffer {

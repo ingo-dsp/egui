@@ -28,7 +28,7 @@ pub struct CreationContext<'s> {
     /// The [`glow::Context`] allows you to initialize OpenGL resources (e.g. shaders) that
     /// you might want to use later from a [`egui::PaintCallback`].
     #[cfg(feature = "glow")]
-    pub gl: Option<std::rc::Rc<glow::Context>>,
+    pub gl: Option<std::sync::Arc<glow::Context>>,
 }
 
 // ----------------------------------------------------------------------------
@@ -337,7 +337,7 @@ pub struct Frame {
     /// A reference to the underlying [`glow`] (OpenGL) context.
     #[cfg(feature = "glow")]
     #[doc(hidden)]
-    pub gl: Option<std::rc::Rc<glow::Context>>,
+    pub gl: Option<std::sync::Arc<glow::Context>>,
 }
 
 impl Frame {
@@ -374,7 +374,7 @@ impl Frame {
     /// To get a [`glow`] context you need to compile with the `glow` feature flag,
     /// and run eframe with the glow backend.
     #[cfg(feature = "glow")]
-    pub fn gl(&self) -> Option<&std::rc::Rc<glow::Context>> {
+    pub fn gl(&self) -> Option<&std::sync::Arc<glow::Context>> {
         self.gl.as_ref()
     }
 
@@ -478,7 +478,7 @@ pub struct Location {
     ///
     /// Note that the leading `?` is NOT included in the string.
     ///
-    /// Use [`Self::web_query_map]` to get the parsed version of it.
+    /// Use [`Self::query_map`] to get the parsed version of it.
     pub query: String,
 
     /// The parsed "query" part of "www.example.com/index.html?query#fragment".

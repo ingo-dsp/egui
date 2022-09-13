@@ -15,7 +15,11 @@ use emath::Rot2;
 ///     fn ui(&mut self, ui: &mut egui::Ui) {
 ///         let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
 ///             // Load the texture only once.
-///             ui.ctx().load_texture("my-image", egui::ColorImage::example())
+///             ui.ctx().load_texture(
+///                 "my-image",
+///                 egui::ColorImage::example(),
+///                 egui::TextureFilter::Linear
+///             )
 ///         });
 ///
 ///         // Show the image:
@@ -116,7 +120,7 @@ impl Image {
             }
 
             {
-                // TODO: builder pattern for Mesh
+                // TODO(emilk): builder pattern for Mesh
                 let mut mesh = Mesh::with_texture(*texture_id);
                 mesh.add_rect_with_uv(rect, *uv, *tint);
                 if let Some((rot, origin)) = rotation {
