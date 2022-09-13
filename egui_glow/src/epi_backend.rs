@@ -5,6 +5,7 @@ struct RequestRepaintEvent;
 
 #[allow(unsafe_code)]
 fn create_display(
+    native_options: &NativeOptions,
     window_builder: winit::window::WindowBuilder,
     event_loop: &winit::event_loop::EventLoop<RequestRepaintEvent>,
 ) -> (
@@ -13,10 +14,11 @@ fn create_display(
 ) {
     let gl_window = unsafe {
         glutin::ContextBuilder::new()
-            .with_depth_buffer(0)
+            .with_depth_buffer(native_options.depth_buffer)
+            .with_multisampling(native_options.multisampling)
             .with_srgb(true)
-            .with_stencil_buffer(0)
-            .with_vsync(true)
+            .with_stencil_buffer(native_options.stencil_buffer)
+            .with_vsync(native_options.vsync)
             .build_windowed(window_builder, event_loop)
             .unwrap()
             .make_current()
@@ -35,12 +37,12 @@ pub use epi::NativeOptions;
 /// Run an egui app
 #[allow(unsafe_code)]
 pub fn run(app_name: &str, native_options: &epi::NativeOptions, app_creator: epi::AppCreator) -> ! {
-    let persistence = egui_winit::epi::Persistence::from_app_name(app_name);
-    let window_settings = persistence.load_window_settings();
+    let storage = egui_winit::epi::create_storage(app_name);
+    let window_settings = egui_winit::epi::load_window_settings(storage.as_deref());
     let window_builder =
         egui_winit::epi::window_builder(native_options, &window_settings).with_title(app_name);
     let event_loop = winit::event_loop::EventLoop::with_user_event();
-    let (gl_window, gl) = create_display(window_builder, &event_loop);
+    let (gl_window, gl) = create_display(native_options, window_builder, &event_loop);
     let gl = std::rc::Rc::new(gl);
 
     let mut painter = crate::Painter::new(gl.clone(), None, "")
@@ -50,7 +52,7 @@ pub fn run(app_name: &str, native_options: &epi::NativeOptions, app_creator: epi
         "egui_glow",
         painter.max_texture_side(),
         gl_window.window(),
-        persistence,
+        storage,
     );
 
     {
@@ -63,7 +65,7 @@ pub fn run(app_name: &str, native_options: &epi::NativeOptions, app_creator: epi
     let mut app = app_creator(&epi::CreationContext {
         egui_ctx: integration.egui_ctx.clone(),
         integration_info: integration.frame.info(),
-        storage: integration.persistence.storage(),
+        storage: integration.frame.storage(),
         gl: gl.clone(),
     });
 
@@ -152,9 +154,7 @@ pub fn run(app_name: &str, native_options: &epi::NativeOptions, app_creator: epi
                 gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
             }
             winit::event::Event::LoopDestroyed => {
-                integration
-                    .persistence
-                    .save(&mut *app, &integration.egui_ctx, gl_window.window());
+                integration.save(&mut *app, gl_window.window());
                 app.on_exit(&gl);
                 painter.destroy();
             }
