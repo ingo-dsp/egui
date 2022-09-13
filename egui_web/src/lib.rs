@@ -339,10 +339,10 @@ fn paint_and_schedule(runner_ref: &AppRunnerRef, panicked: Arc<AtomicBool>) -> R
     fn paint_if_needed(runner_ref: &AppRunnerRef) -> Result<(), JsValue> {
         let mut runner_lock = runner_ref.lock();
         if runner_lock.needs_repaint.fetch_and_clear() {
+            runner_lock.clear_color_buffer();
             let (mut needs_repaint, clipped_primitives) = runner_lock.logic()?;
 
             // BEGIN ADDED
-            runner_lock.clear().expect("Could not clear background");
             let canvas_size = runner_lock.egui_ctx().input().screen_rect.size();
             needs_repaint |= runner_lock.render_gl(canvas_size);
             // END ADDED
