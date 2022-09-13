@@ -66,15 +66,19 @@ pub fn run_glow(
     let mut painter = egui_glow::Painter::new(gl.clone(), None, "")
         .unwrap_or_else(|error| panic!("some OpenGL error occurred {}\n", error));
 
+    let system_theme = native_options.system_theme();
     let mut integration = epi_integration::EpiIntegration::new(
         &event_loop,
         painter.max_texture_side(),
         gl_window.window(),
+        system_theme,
         storage,
         Some(gl.clone()),
         #[cfg(feature = "wgpu")]
         None,
     );
+    let theme = system_theme.unwrap_or(native_options.default_theme);
+    integration.egui_ctx.set_visuals(theme.egui_visuals());
 
     {
         let event_loop_proxy = egui::mutex::Mutex::new(event_loop.create_proxy());
@@ -187,7 +191,7 @@ pub fn run_glow(
                     winit::event::WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         gl_window.resize(**new_inner_size);
                     }
-                    winit::event::WindowEvent::CloseRequested => {
+                    winit::event::WindowEvent::CloseRequested if integration.should_quit() => {
                         *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
                     _ => {}
@@ -248,15 +252,19 @@ pub fn run_wgpu(
 
     let render_state = painter.get_render_state().expect("Uninitialized");
 
+    let system_theme = native_options.system_theme();
     let mut integration = epi_integration::EpiIntegration::new(
         &event_loop,
         painter.max_texture_side().unwrap_or(2048),
         &window,
+        system_theme,
         storage,
         #[cfg(feature = "glow")]
         None,
         Some(render_state.clone()),
     );
+    let theme = system_theme.unwrap_or(native_options.default_theme);
+    integration.egui_ctx.set_visuals(theme.egui_visuals());
 
     {
         let event_loop_proxy = egui::mutex::Mutex::new(event_loop.create_proxy());
@@ -363,7 +371,7 @@ pub fn run_wgpu(
                     winit::event::WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         painter.on_window_resized(new_inner_size.width, new_inner_size.height);
                     }
-                    winit::event::WindowEvent::CloseRequested => {
+                    winit::event::WindowEvent::CloseRequested if integration.should_quit() => {
                         *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
                     _ => {}

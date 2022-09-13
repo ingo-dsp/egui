@@ -2,6 +2,10 @@
 //!
 //! The library translates winit events to egui, handled copy/paste,
 //! updates the cursor, open links clicked in egui, etc.
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::manual_range_contains)]
 
@@ -495,6 +499,7 @@ impl State {
 
     fn set_cursor_icon(&mut self, window: &winit::window::Window, cursor_icon: egui::CursorIcon) {
         // prevent flickering near frame boundary when Windows OS tries to control cursor icon for window resizing
+        #[cfg(windows)]
         if self.current_cursor_icon == cursor_icon {
             return;
         }
