@@ -219,10 +219,6 @@ impl AppRunner {
         let needs_render = self.app.render_gl(&Box::new(gl));
         needs_render
     }
-    pub fn clear(&mut self) -> Result<(), JsValue> {
-        self.painter.clear(self.app.clear_color());
-        Ok(())
-    }
     // END ADDED
 
     pub fn egui_ctx(&self) -> &egui::Context {
