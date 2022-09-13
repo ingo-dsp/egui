@@ -17,7 +17,6 @@
 pub mod backend;
 mod glow_wrapping;
 mod input;
-mod painter;
 pub mod screen_reader;
 mod text_agent;
 
@@ -28,7 +27,6 @@ pub use wasm_bindgen;
 pub use web_sys;
 
 use input::*;
-pub use painter::WebPainter;
 use web_sys::EventTarget;
 
 use std::collections::BTreeMap;
@@ -349,7 +347,7 @@ fn paint_and_schedule(runner_ref: &AppRunnerRef, panicked: Arc<AtomicBool>) -> R
     fn paint_if_needed(runner_ref: &AppRunnerRef) -> Result<(), JsValue> {
         let mut runner_lock = runner_ref.lock();
         if runner_lock.needs_repaint.fetch_and_clear() {
-            let (mut needs_repaint, clipped_meshes) = runner_lock.logic()?;
+            let (mut needs_repaint, clipped_primitives) = runner_lock.logic()?;
 
             // BEGIN ADDED
             runner_lock.clear().expect("Could not clear background");
@@ -357,7 +355,7 @@ fn paint_and_schedule(runner_ref: &AppRunnerRef, panicked: Arc<AtomicBool>) -> R
             needs_repaint |= runner_lock.render_gl(canvas_size);
             // END ADDED
 
-            runner_lock.paint(clipped_meshes)?;
+            runner_lock.paint(&clipped_primitives)?;
             if needs_repaint {
                 runner_lock.needs_repaint.set_true();
             }

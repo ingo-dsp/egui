@@ -5,7 +5,18 @@ NOTE: [`epaint`](epaint/CHANGELOG.md), [`eframe`](eframe/CHANGELOG.md), [`egui_w
 
 
 ## Unreleased
-* Fixed ComboBoxes always being rendered left-aligned ([1304](https://github.com/emilk/egui/pull/1304))
+
+### Added ⭐
+* Add `Shape::Callback` for backend-specific painting ([#1351](https://github.com/emilk/egui/pull/1351)).
+* Added `Frame::canvas` ([#1362](https://github.com/emilk/egui/pull/1362)).
+* `Context::request_repaint` will wake up UI thread, if integrations has called `Context::set_request_repaint_callback` ([#1366](https://github.com/emilk/egui/pull/1366)).
+
+### Changed 🔧
+* `ClippedMesh` has been replaced with `ClippedPrimitive` ([#1351](https://github.com/emilk/egui/pull/1351)).
+
+### Fixed 🐛
+* Fixed ComboBoxes always being rendered left-aligned ([#1304](https://github.com/emilk/egui/pull/1304)).
+
 
 ## 0.17.0 - 2022-02-22 - Improved font selection and image handling
 

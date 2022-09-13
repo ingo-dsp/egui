@@ -94,8 +94,33 @@
 pub mod file_storage;
 
 pub use egui; // Re-export for user convenience
+pub use glow; // Re-export for user convenience
 
 use std::sync::{Arc, Mutex};
+
+/// The is is how your app is created.
+///
+/// You can use the [`CreationContext`] to setup egui, restore state, setup OpenGL things, etc.
+pub type AppCreator = Box<dyn FnOnce(&CreationContext<'_>) -> Box<dyn App>>;
+
+/// Data that is passed to [`AppCreator`] that can be used to setup and initialize your app.
+pub struct CreationContext<'s> {
+    /// The egui Context.
+    ///
+    /// You can use this to customize the look of egui, e.g to call [`egui::Context::set_fonts`],
+    /// [`egui::Context::set_visuals`] etc.
+    pub egui_ctx: egui::Context,
+
+    /// Information about the surrounding environment.
+    pub integration_info: IntegrationInfo,
+
+    /// You can use the storage to restore app state(requires the "persistence" feature).
+    pub storage: Option<&'s dyn Storage>,
+
+    /// The [`glow::Context`] allows you to initialize OpenGL resources (e.g. shaders) that
+    /// you might want to use later from a [`egui::PaintCallback`].
+    pub gl: std::rc::Rc<glow::Context>,
+}
 
 // ----------------------------------------------------------------------------
 
@@ -108,17 +133,8 @@ pub trait App {
     ///
     /// The [`egui::Context`] and [`Frame`] can be cloned and saved if you like.
     ///
-    /// To force a repaint, call either [`egui::Context::request_repaint`] during the call to `update`,
-    /// or call [`Frame::request_repaint`] at any time (e.g. from another thread).
+    /// To force a repaint, call [`egui::Context::request_repaint`] at any time (e.g. from another thread).
     fn update(&mut self, ctx: &egui::Context, frame: &Frame);
-
-    /// Called once before the first frame.
-    ///
-    /// Allows you to do setup code, e.g to call [`egui::Context::set_fonts`],
-    /// [`egui::Context::set_visuals`] etc.
-    ///
-    /// Also allows you to restore state, if there is a storage (required the "persistence" feature).
-    fn setup(&mut self, _ctx: &egui::Context, _frame: &Frame, _storage: Option<&dyn Storage>) {}
 
     /// Added by ingo
     fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool;
@@ -127,13 +143,13 @@ pub trait App {
     ///
     /// Only called when the "persistence" feature is enabled.
     ///
-    /// On web the states is stored to "Local Storage".
+    /// On web the state is stored to "Local Storage".
     /// On native the path is picked using [`directories_next::ProjectDirs::data_dir`](https://docs.rs/directories-next/2.0.0/directories_next/struct.ProjectDirs.html#method.data_dir) which is:
     /// * Linux:   `/home/UserName/.local/share/APPNAME`
     /// * macOS:   `/Users/UserName/Library/Application Support/APPNAME`
     /// * Windows: `C:\Users\UserName\AppData\Roaming\APPNAME`
     ///
-    /// where `APPNAME` is what is returned by [`Self::name()`].
+    /// where `APPNAME` is what is given to `eframe::run_native`.
     fn save(&mut self, _storage: &mut dyn Storage) {}
 
     /// Called before an exit that can be aborted.
@@ -148,16 +164,13 @@ pub trait App {
         true
     }
 
-    /// Called once on shutdown (before or after [`Self::save`]). If you need to abort an exit use
-    /// [`Self::on_exit_event`]
-    fn on_exit(&mut self) {}
+    /// Called once on shutdown, after [`Self::save`].
+    ///
+    /// If you need to abort an exit use [`Self::on_exit_event`].
+    fn on_exit(&mut self, _gl: &glow::Context) {}
 
     // ---------
     // Settings:
-
-    /// The name of your App, used for the title bar of native windows
-    /// and the save location of persistence (see [`Self::save`]).
-    fn name(&self) -> &str;
 
     /// Time between automatic calls to [`Self::save`]
     fn auto_save_interval(&self) -> std::time::Duration {
@@ -351,17 +364,17 @@ impl Frame {
         self.lock().output.drag_window = true;
     }
 
-    /// This signals the [`egui`] integration that a repaint is required.
-    ///
-    /// Call this e.g. when a background process finishes in an async context and/or background thread.
-    pub fn request_repaint(&self) {
-        self.lock().repaint_signal.request_repaint();
-    }
-
     /// for integrations only: call once per frame
     pub fn take_app_output(&self) -> crate::backend::AppOutput {
         std::mem::take(&mut self.lock().output)
     }
+}
+
+#[cfg(test)]
+#[test]
+fn frame_impl_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Frame>();
 }
 
 /// Information about the web environment (if applicable).
@@ -509,14 +522,6 @@ pub const APP_KEY: &str = "app";
 pub mod backend {
     use super::*;
 
-    /// How to signal the [`egui`] integration that a repaint is required.
-    pub trait RepaintSignal: Send + Sync {
-        /// This signals the [`egui`] integration that a repaint is required.
-        ///
-        /// Call this e.g. when a background process finishes in an async context and/or background thread.
-        fn request_repaint(&self);
-    }
-
     /// The data required by [`Frame`] each frame.
     pub struct FrameData {
         /// Information about the integration.
@@ -524,9 +529,6 @@ pub mod backend {
 
         /// Where the app can issue commands back to the integration.
         pub output: AppOutput,
-
-        /// If you need to request a repaint from another thread, clone this and send it to that other thread.
-        pub repaint_signal: std::sync::Arc<dyn RepaintSignal>,
     }
 
     /// Action that can be taken by the user app.
