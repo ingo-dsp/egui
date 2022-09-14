@@ -357,10 +357,8 @@ impl Painter {
                 self.gl
                     .viewport(0, 0, screen_size_px[0] as i32, screen_size_px[1] as i32);
 
-                // BEGIN REMOVED
-                // // use the same clear-color as was set for the screen framebuffer.
-                // self.gl.clear(glow::COLOR_BUFFER_BIT);
-                // END REMOVED
+                // use the same clear-color as was set for the screen framebuffer.
+                self.gl.clear(glow::COLOR_BUFFER_BIT);
             }
         }
         let size_in_pixels = unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
