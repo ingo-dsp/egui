@@ -93,23 +93,32 @@ pub fn install_document_events(runner_container: &AppRunnerContainer) -> Result<
 
             let egui_wants_keyboard = runner_lock.egui_ctx().wants_keyboard_input();
 
-            let prevent_default = if matches!(event.key().as_str(), "Tab") {
-                // Always prevent moving cursor to url bar.
-                // egui wants to use tab to move to the next text field.
-                true
-            } else if egui_wants_keyboard {
-                matches!(
-                    event.key().as_str(),
-                    "Backspace" // so we don't go back to previous page when deleting text
-                    | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "ArrowUp" // cmd-left is "back" on Mac (https://github.com/emilk/egui/issues/58)
-                )
-            } else {
-                // We never want to prevent:
-                // * F5 / cmd-R (refresh)
-                // * cmd-shift-C (debug tools)
-                // * cmd/ctrl-c/v/x (or we stop copy/past/cut events)
-                false
+            // BEGIN MODIFIED
+            let prevent_default = match event.key().as_str() {
+                "Tab" => true,
+                "Backspace" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "ArrowUp" => {
+                    // Backspace: so we don't go back to previous page when deleting text
+                    // cmd-left is "back" on Mac (https://github.com/emilk/egui/issues/58)
+                    egui_wants_keyboard
+                },
+                "d" if modifiers.ctrl || modifiers.command => {
+                    // Command-D creates a bookmark on a webpage usually, but for us it is duplicate.
+                    true
+                }
+                "w" if modifiers.ctrl || modifiers.command => {// (does not work...)
+                    // Command-W closes the tab, but we have tabs ourselves to close
+                    true
+                }
+                "Escape" => true,
+                _ => {
+                    // We never want to prevent:
+                    // * F5 / cmd-R (refresh)
+                    // * cmd-shift-C (debug tools)
+                    // * cmd/ctrl-c/v/x (or we stop copy/past/cut events)
+                    false
+                }
             };
+            // END MODIFIED
 
             // tracing::debug!(
             //     "On key-down {:?}, egui_wants_keyboard: {}, prevent_default: {}",
@@ -147,6 +156,17 @@ pub fn install_document_events(runner_container: &AppRunnerContainer) -> Result<
         "paste",
         |event: web_sys::ClipboardEvent, mut runner_lock| {
             if let Some(data) = event.clipboard_data() {
+                if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
+                    let clipboard_mime_data = data.get_data(clipboard_mime).ok();
+                    if clipboard_mime_data.is_some() && !clipboard_mime_data.as_ref().unwrap().is_empty() {
+                        let data = clipboard_mime_data.as_ref().unwrap();
+                        runner_lock.app.on_paste(&data);
+                        runner_lock.needs_repaint.repaint_asap();
+                        event.stop_propagation();
+                        event.prevent_default();
+                        return;
+                    }
+                }
                 if let Ok(text) = data.get_data("text") {
                     let text = text.replace("\r\n", "\n");
                     if !text.is_empty() {
@@ -164,7 +184,21 @@ pub fn install_document_events(runner_container: &AppRunnerContainer) -> Result<
     runner_container.add_event_listener(
         &document,
         "cut",
-        |_: web_sys::ClipboardEvent, mut runner_lock| {
+        |event: web_sys::ClipboardEvent, mut runner_lock| {
+            let clipboard_mime = runner_lock.app.get_clipboard_mime();
+            if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
+                if let Some(data) = runner_lock.app.on_cut() {
+                    if let Some(clipboard_data) = event.clipboard_data() {
+                        if clipboard_data.set_data(clipboard_mime, &data).is_err() {
+                            tracing::error!("could not set clipboard");
+                        }
+                        event.stop_propagation();
+                        event.prevent_default();
+                        runner_lock.needs_repaint.repaint_asap();
+                        return;
+                    }
+                }
+            }
             runner_lock.input.raw.events.push(egui::Event::Cut);
             runner_lock.needs_repaint.repaint_asap();
         },
@@ -174,7 +208,19 @@ pub fn install_document_events(runner_container: &AppRunnerContainer) -> Result<
     runner_container.add_event_listener(
         &document,
         "copy",
-        |_: web_sys::ClipboardEvent, mut runner_lock| {
+        |event: web_sys::ClipboardEvent, mut runner_lock| {
+            if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
+                if let Some(data) = runner_lock.app.on_copy() {
+                    if let Some(clipboard_data) = event.clipboard_data() {
+                        if clipboard_data.set_data(clipboard_mime, &data).is_err() {
+                            tracing::error!("could not set clipboard");
+                        }
+                        event.stop_propagation();
+                        event.prevent_default();
+                        return;
+                    }
+                }
+            }
             runner_lock.input.raw.events.push(egui::Event::Copy);
             runner_lock.needs_repaint.repaint_asap();
         },
@@ -242,7 +288,7 @@ pub fn install_canvas_events(runner_container: &AppRunnerContainer) -> Result<()
     )?;
 
     runner_container.add_event_listener(
-        &canvas,
+        &web_sys::window().unwrap().document().unwrap(),
         "mousemove",
         |event: web_sys::MouseEvent, mut runner_lock| {
             let pos = pos_from_mouse_event(runner_lock.canvas_id(), &event);
@@ -258,7 +304,7 @@ pub fn install_canvas_events(runner_container: &AppRunnerContainer) -> Result<()
     )?;
 
     runner_container.add_event_listener(
-        &canvas,
+        &web_sys::window().unwrap().document().unwrap(),
         "mouseup",
         |event: web_sys::MouseEvent, mut runner_lock| {
             if let Some(button) = button_from_mouse_event(&event) {

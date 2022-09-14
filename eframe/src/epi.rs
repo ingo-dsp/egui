@@ -51,6 +51,14 @@ pub trait App {
 
     /// Added by ingo
     fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool;
+    /// Added by ingo
+    fn get_clipboard_mime(&self) -> Option<&'static str>;
+    /// Added by ingo
+    fn on_paste(&mut self, data: &str);
+    /// Added by ingo
+    fn on_copy(&mut self) -> Option<String>;
+    /// Added by ingo
+    fn on_cut(&mut self) -> Option<String>;
 
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///

@@ -148,12 +148,9 @@ fn test_parse_query() {
 pub struct AppRunner {
     pub(crate) frame: epi::Frame,
     egui_ctx: egui::Context,
-
-    // BEGIN CHANGED
     pub(crate) painter: WrappedGlowPainter,
-    // END CHANGED
     pub(crate) input: WebInput,
-    app: Box<dyn epi::App>,
+    pub app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
     last_save_time: f64,
     screen_reader: super::screen_reader::ScreenReader,

@@ -77,6 +77,15 @@ pub fn push_touches(runner: &mut AppRunner, phase: egui::TouchPhase, event: &web
 /// Web sends all keys as strings, so it is up to us to figure out if it is
 /// a real text input or the name of a key.
 pub fn should_ignore_key(key: &str) -> bool {
+    // BEGIN ADDED
+    // NB: The commented matching code below did not work correctly with the ^ key (reported as "Dead").
+    // So instead of defining a bunch of exceptions, we try to use the fact that a text input
+    // consists only of one character.
+    key.chars().count() > 1 // TODO: is this fine?
+    // END ADDED
+
+    // BEGIN REMOVED
+/*
     let is_function_key = key.starts_with('F') && key.len() > 1;
     is_function_key
         || matches!(
@@ -108,6 +117,8 @@ pub fn should_ignore_key(key: &str) -> bool {
                 | "Shift"
                 | "Tab"
         )
+*/
+    // END REMOVED
 }
 
 /// Web sends all all keys as strings, so it is up to us to figure out if it is
