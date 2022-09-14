@@ -7,6 +7,11 @@ use egui::TexturesDelta;
 
 pub use egui::{pos2, Color32};
 
+// BEGIN ADDED
+use egui::Vec2;
+pub type NeedsRender = bool;
+// BEGIN ADDED
+
 // ----------------------------------------------------------------------------
 
 /// Data gathered between frames.
@@ -143,7 +148,10 @@ fn test_parse_query() {
 pub struct AppRunner {
     pub(crate) frame: epi::Frame,
     egui_ctx: egui::Context,
-    painter: WrappedGlowPainter,
+
+    // BEGIN CHANGED
+    pub(crate) painter: WrappedGlowPainter,
+    // END CHANGED
     pub(crate) input: WebInput,
     app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
@@ -231,6 +239,15 @@ impl AppRunner {
 
         Ok(runner)
     }
+
+    // BEGIN ADDED
+    pub fn render_gl(&mut self, _canvas_size: Vec2) -> NeedsRender {
+        use egui_glow::glow;
+        let gl: &glow::Context = &self.painter.painter.gl;
+        let needs_render = self.app.render_gl(&Box::new(gl));
+        needs_render
+    }
+    // END ADDED
 
     pub fn egui_ctx(&self) -> &egui::Context {
         &self.egui_ctx

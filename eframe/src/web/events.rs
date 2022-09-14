@@ -11,10 +11,24 @@ pub fn paint_and_schedule(
             runner_lock.needs_repaint.clear();
             runner_lock.clear_color_buffer();
             let (repaint_after, clipped_primitives) = runner_lock.logic()?;
+
+            // BEGIN ADDED
+            let canvas_size = runner_lock.egui_ctx().input().screen_rect.size();
+            let mut needs_repaint = runner_lock.render_gl(canvas_size);
+            // END ADDED
+
             runner_lock.paint(&clipped_primitives)?;
             runner_lock
                 .needs_repaint
                 .repaint_after(repaint_after.as_secs_f64());
+
+            // BEGIN ADDED
+            if needs_repaint {
+                runner_lock.needs_repaint.repaint_asap();
+            }
+            // END ADDED
+
+
             runner_lock.auto_save();
         }
 

@@ -49,6 +49,9 @@ pub trait App {
     /// To force a repaint, call [`egui::Context::request_repaint`] at any time (e.g. from another thread).
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame);
 
+    /// Added by ingo
+    fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool;
+
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///
     /// Only called when the "persistence" feature is enabled.

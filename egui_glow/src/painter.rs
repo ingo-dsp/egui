@@ -43,8 +43,9 @@ impl TextureFilterExt for TextureFilter {
 /// This struct must be destroyed with [`Painter::destroy`] before dropping, to ensure OpenGL
 /// objects have been properly deleted and are not leaked.
 pub struct Painter {
-    gl: Arc<glow::Context>,
-
+    // BEGIN CHANGED
+    pub gl: Arc<glow::Context>,
+    // END CHANGED
     max_texture_side: usize,
 
     program: glow::Program,
@@ -355,6 +356,7 @@ impl Painter {
                 self.gl.disable(glow::SCISSOR_TEST);
                 self.gl
                     .viewport(0, 0, screen_size_px[0] as i32, screen_size_px[1] as i32);
+
                 // use the same clear-color as was set for the screen framebuffer.
                 self.gl.clear(glow::COLOR_BUFFER_BIT);
             }
