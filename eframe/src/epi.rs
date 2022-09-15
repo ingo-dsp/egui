@@ -47,18 +47,26 @@ pub trait App {
     /// The [`egui::Context`] can be cloned and saved if you like.
     ///
     /// To force a repaint, call [`egui::Context::request_repaint`] at any time (e.g. from another thread).
-    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame);
+    fn update(&mut self, _ctx: &egui::Context, _frame: &mut Frame);
 
     /// Added by ingo
-    fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool { false }
+    fn render_gl(&mut self, _gl: &Box<&dyn core::any::Any>) -> bool {
+        false
+    }
     /// Added by ingo
-    fn get_clipboard_mime(&self) -> Option<&'static str> { None }
+    fn get_clipboard_mime(&self) -> Option<&'static str> {
+        None
+    }
     /// Added by ingo
-    fn on_paste(&mut self, data: &str) { }
+    fn on_paste(&mut self, _data: &str) {}
     /// Added by ingo
-    fn on_copy(&mut self) -> Option<String> { None }
+    fn on_copy(&mut self) -> Option<String> {
+        None
+    }
     /// Added by ingo
-    fn on_cut(&mut self) -> Option<String> { None }
+    fn on_cut(&mut self) -> Option<String> {
+        None
+    }
 
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///
