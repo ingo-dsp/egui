@@ -50,15 +50,15 @@ pub trait App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame);
 
     /// Added by ingo
-    fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool;
+    fn render_gl(&mut self, gl: &Box<&dyn core::any::Any>) -> bool { false }
     /// Added by ingo
-    fn get_clipboard_mime(&self) -> Option<&'static str>;
+    fn get_clipboard_mime(&self) -> Option<&'static str> { None }
     /// Added by ingo
-    fn on_paste(&mut self, data: &str);
+    fn on_paste(&mut self, data: &str) { }
     /// Added by ingo
-    fn on_copy(&mut self) -> Option<String>;
+    fn on_copy(&mut self) -> Option<String> { None }
     /// Added by ingo
-    fn on_cut(&mut self) -> Option<String>;
+    fn on_cut(&mut self) -> Option<String> { None }
 
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///
