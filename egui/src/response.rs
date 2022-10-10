@@ -52,7 +52,7 @@ pub struct Response {
     pub double_clicked: [bool; NUM_POINTER_BUTTONS],
 
     /// The thing was triple-clicked.
-    pub(crate) triple_clicked: [bool; NUM_POINTER_BUTTONS],
+    pub triple_clicked: [bool; NUM_POINTER_BUTTONS],
 
     /// The widgets is being dragged
     #[doc(hidden)]

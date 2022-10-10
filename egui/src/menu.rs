@@ -194,8 +194,8 @@ pub(crate) fn context_menu(
 
 /// Stores the state for the context menu.
 #[derive(Clone, Default)]
-pub(crate) struct MenuRootManager {
-    inner: Option<MenuRoot>,
+pub struct MenuRootManager {
+    pub inner: Option<MenuRoot>,
 }
 
 impl MenuRootManager {
@@ -217,7 +217,7 @@ impl MenuRootManager {
         }
     }
 
-    fn is_menu_open(&self, id: Id) -> bool {
+    pub fn is_menu_open(&self, id: Id) -> bool {
         self.inner.as_ref().map(|m| m.id) == Some(id)
     }
 }
@@ -238,7 +238,7 @@ impl std::ops::DerefMut for MenuRootManager {
 
 /// Menu root associated with an Id from a Response
 #[derive(Clone)]
-pub(crate) struct MenuRoot {
+pub struct MenuRoot {
     pub menu_state: Arc<RwLock<MenuState>>,
     pub id: Id,
 }
@@ -360,7 +360,7 @@ impl MenuRoot {
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub(crate) enum MenuResponse {
+pub enum MenuResponse {
     Close,
     Stay,
     Create(Pos2, Id),
@@ -488,7 +488,7 @@ impl SubMenu {
     }
 }
 
-pub(crate) struct MenuState {
+pub struct MenuState {
     /// The opened sub-menu and its [`Id`]
     sub_menu: Option<(Id, Arc<RwLock<MenuState>>)>,
 
