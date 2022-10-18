@@ -89,7 +89,7 @@ fn custon_window_frame(
                 Button::new(RichText::new("❌").size(height - 4.0)).frame(false),
             );
             if close_response.clicked() {
-                frame.quit();
+                frame.close();
             }
 
             // Interact with the title bar (drag to move window):
@@ -99,8 +99,8 @@ fn custon_window_frame(
                 rect
             };
             let title_bar_response =
-                ui.interact(title_bar_rect, Id::new("title_bar"), Sense::drag());
-            if title_bar_response.drag_started() {
+                ui.interact(title_bar_rect, Id::new("title_bar"), Sense::click());
+            if title_bar_response.is_pointer_button_down_on() {
                 frame.drag_window();
             }
 
