@@ -4,3 +4,4 @@
 /media/*
 .idea
 .DS_Store
+*.iml
