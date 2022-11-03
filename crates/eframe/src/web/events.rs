@@ -166,11 +166,12 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
                     let clipboard_mime_data = data.get_data(clipboard_mime).ok();
                     if clipboard_mime_data.is_some() && !clipboard_mime_data.as_ref().unwrap().is_empty() {
                         let data = clipboard_mime_data.as_ref().unwrap();
-                        runner_lock.app.on_paste(&data);
-                        runner_lock.needs_repaint.repaint_asap();
-                        event.stop_propagation();
-                        event.prevent_default();
-                        return;
+                        if runner_lock.app.on_paste(&data).is_some() {
+                            runner_lock.needs_repaint.repaint_asap();
+                            event.stop_propagation();
+                            event.prevent_default();
+                            return;
+                        }
                     }
                 }
                 if let Ok(text) = data.get_data("text") {
