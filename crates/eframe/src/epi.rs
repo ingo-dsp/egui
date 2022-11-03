@@ -63,7 +63,7 @@ pub trait App {
         None
     }
     /// Added by ingo
-    fn on_paste(&mut self, _data: &str) {}
+    fn on_paste(&mut self, _data: &str) -> Option<()> { None }
     /// Added by ingo
     fn on_copy(&mut self) -> Option<String> {
         None
