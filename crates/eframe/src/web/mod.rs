@@ -174,6 +174,38 @@ pub fn set_clipboard_text(s: &str) {
     }
 }
 
+#[wasm_bindgen(
+    inline_js = "export function new_clipboard_item(data, type) { return new ClipboardItem({ [type]: new Blob([data], { type }) }) }"
+)]
+extern "C" {
+    fn new_clipboard_item(data: &JsValue, mime_type: &JsValue) -> JsValue;
+}
+
+#[cfg(web_sys_unstable_apis)]
+pub fn set_clipboard_data(data: &str, mime: &str, data_transfer: Option<web_sys::DataTransfer>) {
+    if let Some(data_transfer) = data_transfer {
+        if data_transfer.set_data(mime, data).is_err() {
+            tracing::error!("could not set clipboard");
+        }
+    } else if let Some(window) = web_sys::window() {
+        if let Some(clipboard) = window.navigator().clipboard() {
+            let data = vec![new_clipboard_item(
+                &JsValue::from(data),
+                &JsValue::from(mime),
+            )];
+            let promise =
+                clipboard.write(&JsValue::from(data.into_iter().collect::<js_sys::Array>()));
+            let future = wasm_bindgen_futures::JsFuture::from(promise);
+            let future = async move {
+                if let Err(err) = future.await {
+                    tracing::error!("Copy/cut action denied: {:?}", err);
+                }
+            };
+            wasm_bindgen_futures::spawn_local(future);
+        }
+    }
+}
+
 fn cursor_web_name(cursor: egui::CursorIcon) -> &'static str {
     match cursor {
         egui::CursorIcon::Alias => "alias",

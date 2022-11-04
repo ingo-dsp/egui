@@ -1,6 +1,6 @@
 //! All the data egui returns to the backend at the end of each frame.
 
-use crate::WidgetType;
+use crate::{ClipboardData, WidgetType};
 
 /// What egui emits each frame from [`crate::Context::run`].
 ///
@@ -76,6 +76,9 @@ pub struct PlatformOutput {
     /// ```
     pub copied_text: String,
 
+    /// If set, put this data in the system clipboard along with a mime-type.
+    pub copied_data: Option<ClipboardData>,
+
     /// Events that may be useful to e.g. a screen reader.
     pub events: Vec<OutputEvent>,
 
@@ -118,6 +121,7 @@ impl PlatformOutput {
             cursor_icon,
             open_url,
             copied_text,
+            copied_data,
             mut events,
             mutable_text_under_cursor,
             text_cursor_pos,
@@ -129,6 +133,9 @@ impl PlatformOutput {
         }
         if !copied_text.is_empty() {
             self.copied_text = copied_text;
+        }
+        if let Some(copied_data) = copied_data {
+            self.copied_data = Some(copied_data);
         }
         self.events.append(&mut events);
         self.mutable_text_under_cursor = mutable_text_under_cursor;

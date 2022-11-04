@@ -1,4 +1,5 @@
 use super::*;
+use egui::ClipboardMime;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 struct IsDestroyed(pub bool);
@@ -31,7 +32,6 @@ pub fn paint_and_schedule(
                 runner_lock.needs_repaint.repaint_asap();
             }
             // END ADDED
-
 
             runner_lock.auto_save();
         }
@@ -162,26 +162,27 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
         "paste",
         |event: web_sys::ClipboardEvent, mut runner_lock| {
             if let Some(data) = event.clipboard_data() {
-                if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
-                    let clipboard_mime_data = data.get_data(clipboard_mime).ok();
-                    if clipboard_mime_data.is_some() && !clipboard_mime_data.as_ref().unwrap().is_empty() {
-                        let data = clipboard_mime_data.as_ref().unwrap();
-                        if runner_lock.app.on_paste(&data).is_some() {
-                            runner_lock.needs_repaint.repaint_asap();
+                let types: Vec<JsValue> = data.types().to_vec();
+                for tpe in types {
+                    if let Some(tpe) = tpe.as_string() {
+                        if let Ok(text) = data.get_data(&tpe) {
+                            let text = text.replace("\r\n", "\n");
+                            if !text.is_empty() {
+                                let event = if tpe == "text" || tpe == "text/plain" {
+                                    egui::Event::Paste(text)
+                                } else {
+                                    egui::Event::PasteMime(egui::ClipboardData {
+                                        data: text,
+                                        mime: ClipboardMime::Specific(tpe),
+                                    })
+                                };
+                                runner_lock.input.raw.events.push(event);
+                                runner_lock.needs_repaint.repaint_asap();
+                            }
                             event.stop_propagation();
                             event.prevent_default();
-                            return;
                         }
                     }
-                }
-                if let Ok(text) = data.get_data("text") {
-                    let text = text.replace("\r\n", "\n");
-                    if !text.is_empty() {
-                        runner_lock.input.raw.events.push(egui::Event::Paste(text));
-                        runner_lock.needs_repaint.repaint_asap();
-                    }
-                    event.stop_propagation();
-                    event.prevent_default();
                 }
             }
         },
@@ -192,22 +193,15 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
         &document,
         "cut",
         |event: web_sys::ClipboardEvent, mut runner_lock| {
-            let clipboard_mime = runner_lock.app.get_clipboard_mime();
-            if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
-                if let Some(data) = runner_lock.app.on_cut() {
-                    if let Some(clipboard_data) = event.clipboard_data() {
-                        if clipboard_data.set_data(clipboard_mime, &data).is_err() {
-                            tracing::error!("could not set clipboard");
-                        }
-                        event.stop_propagation();
-                        event.prevent_default();
-                        runner_lock.needs_repaint.repaint_asap();
-                        return;
-                    }
-                }
-            }
+            runner_lock.active_clipboard_data_transfer = event.clipboard_data();
             runner_lock.input.raw.events.push(egui::Event::Cut);
+            let _ = runner_lock.logic(); // we need to handle the event synchronously, so the data-transfer is still valid.
+            if runner_lock.active_clipboard_data_transfer.take().is_some() {
+                tracing::error!("clipboard-cut event not handled")
+            }
             runner_lock.needs_repaint.repaint_asap();
+            event.stop_propagation();
+            event.prevent_default();
         },
     )?;
 
@@ -216,20 +210,15 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
         &document,
         "copy",
         |event: web_sys::ClipboardEvent, mut runner_lock| {
-            if let Some(clipboard_mime) = runner_lock.app.get_clipboard_mime() {
-                if let Some(data) = runner_lock.app.on_copy() {
-                    if let Some(clipboard_data) = event.clipboard_data() {
-                        if clipboard_data.set_data(clipboard_mime, &data).is_err() {
-                            tracing::error!("could not set clipboard");
-                        }
-                        event.stop_propagation();
-                        event.prevent_default();
-                        return;
-                    }
-                }
-            }
+            runner_lock.active_clipboard_data_transfer = event.clipboard_data();
             runner_lock.input.raw.events.push(egui::Event::Copy);
+            let _ = runner_lock.logic(); // we need to handle the event synchronously, so the data-transfer is still valid.
+            if runner_lock.active_clipboard_data_transfer.take().is_some() {
+                tracing::error!("clipboard-copy event not handled")
+            }
             runner_lock.needs_repaint.repaint_asap();
+            event.stop_propagation();
+            event.prevent_default();
         },
     )?;
 

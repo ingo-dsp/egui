@@ -172,8 +172,11 @@ pub enum Event {
     /// The integration detected a "cut" event (e.g. Cmd+X).
     Cut,
 
-    /// The integration detected a "paste" event (e.g. Cmd+V).
+    /// The integration detected a "paste" event (e.g. Cmd+V) of regular text.
     Paste(String),
+
+    /// The integration detected a "paste" event (e.g. Cmd+V) of data with a special mime type.
+    PasteMime(ClipboardData),
 
     /// Text input, e.g. via keyboard.
     ///
@@ -268,6 +271,21 @@ pub enum Event {
         /// The value is in the range from 0.0 (no pressure) to 1.0 (maximum pressure).
         force: f32,
     },
+}
+
+/// Clipboard data with mime type
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct ClipboardData {
+    pub data: String,
+    pub mime: ClipboardMime
+}
+
+/// Mime types for accessing the clipboard
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum ClipboardMime {
+    Specific(String)
 }
 
 /// Mouse button (or similar for touch input)

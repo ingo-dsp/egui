@@ -479,6 +479,7 @@ impl State {
             cursor_icon,
             open_url,
             copied_text,
+            copied_data,
             events: _,                    // handled above
             mutable_text_under_cursor: _, // only used in eframe web
             text_cursor_pos,
@@ -493,6 +494,9 @@ impl State {
 
         if !copied_text.is_empty() {
             self.clipboard.set(copied_text);
+        }
+        if let Some(copied_data) = copied_data {
+            todo!("implement clipboard copy with mime in winit")
         }
 
         if let Some(egui::Pos2 { x, y }) = text_cursor_pos {

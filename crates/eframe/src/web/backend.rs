@@ -169,6 +169,7 @@ pub struct AppRunner {
     egui_ctx: egui::Context,
     pub(crate) painter: WrappedGlowPainter,
     pub(crate) input: WebInput,
+    pub active_clipboard_data_transfer: Option<web_sys::DataTransfer>,
     pub app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
     pub(crate) is_destroyed: std::sync::Arc<IsDestroyed>,
@@ -250,6 +251,7 @@ impl AppRunner {
             egui_ctx,
             painter,
             input: Default::default(),
+            active_clipboard_data_transfer: None,
             app,
             needs_repaint,
             is_destroyed: Default::default(),
@@ -388,6 +390,7 @@ impl AppRunner {
             cursor_icon,
             open_url,
             copied_text,
+            copied_data,
             events: _, // already handled
             mutable_text_under_cursor,
             text_cursor_pos,
@@ -399,12 +402,26 @@ impl AppRunner {
         }
 
         #[cfg(web_sys_unstable_apis)]
-        if !copied_text.is_empty() {
-            set_clipboard_text(&copied_text);
+        {
+            let clipboard_data_transfer = self.active_clipboard_data_transfer.take();
+            if !copied_text.is_empty() {
+                set_clipboard_text(&copied_text);
+            }
+
+            if let Some(egui::ClipboardData {
+                data,
+                mime: egui::ClipboardMime::Specific(mime),
+            }) = &copied_data
+            {
+                set_clipboard_data(data, mime, clipboard_data_transfer);
+            }
         }
 
         #[cfg(not(web_sys_unstable_apis))]
-        let _ = copied_text;
+        {
+            let _ = copied_text;
+            let _ = copied_data;
+        }
 
         self.mutable_text_under_cursor = mutable_text_under_cursor;
 
