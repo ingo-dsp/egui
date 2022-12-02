@@ -1,6 +1,7 @@
 use super::*;
 use egui::ClipboardMime;
 use std::sync::atomic::{AtomicBool, Ordering};
+use wasm_bindgen::JsCast;
 
 struct IsDestroyed(pub bool);
 
@@ -43,7 +44,6 @@ pub fn paint_and_schedule(
         runner_ref: AppRunnerRef,
         panicked: Arc<AtomicBool>,
     ) -> Result<(), JsValue> {
-        use wasm_bindgen::JsCast;
         let window = web_sys::window().unwrap();
         let closure = Closure::once(move || paint_and_schedule(&runner_ref, panicked));
         window.request_animation_frame(closure.as_ref().unchecked_ref())?;
@@ -75,7 +75,7 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
                 return;
             }
 
-            let modifiers = modifiers_from_event(&event);
+            let modifiers = modifiers_from_keyboard_event(&event);
             runner_lock.input.raw.modifiers = modifiers;
 
             let key = event.key();
@@ -106,12 +106,13 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
                     // Backspace: so we don't go back to previous page when deleting text
                     // cmd-left is "back" on Mac (https://github.com/emilk/egui/issues/58)
                     egui_wants_keyboard
-                },
+                }
                 "d" if modifiers.ctrl || modifiers.command => {
                     // Command-D creates a bookmark on a webpage usually, but for us it is duplicate.
                     true
                 }
-                "w" if modifiers.ctrl || modifiers.command => {// (does not work...)
+                "w" if modifiers.ctrl || modifiers.command => {
+                    // (does not work...)
                     // Command-W closes the tab, but we have tabs ourselves to close
                     true
                 }
@@ -143,7 +144,7 @@ pub fn install_document_events(runner_container: &mut AppRunnerContainer) -> Res
         &document,
         "keyup",
         |event: web_sys::KeyboardEvent, mut runner_lock| {
-            let modifiers = modifiers_from_event(&event);
+            let modifiers = modifiers_from_keyboard_event(&event);
             runner_lock.input.raw.modifiers = modifiers;
             if let Some(key) = translate_key(&event.key()) {
                 runner_lock.input.raw.events.push(egui::Event::Key {
@@ -267,7 +268,10 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         |event: web_sys::MouseEvent, mut runner_lock: egui::mutex::MutexGuard<AppRunner>| {
             if let Some(button) = button_from_mouse_event(&event) {
                 let pos = pos_from_mouse_event(runner_lock.canvas_id(), &event);
-                let modifiers = runner_lock.input.raw.modifiers;
+
+                let modifiers = modifiers_from_mouse_event(&event);
+                runner_lock.input.raw.modifiers = modifiers;
+
                 runner_lock
                     .input
                     .raw
@@ -289,6 +293,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &web_sys::window().unwrap().document().unwrap(),
         "mousemove",
         |event: web_sys::MouseEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             let pos = pos_from_mouse_event(runner_lock.canvas_id(), &event);
             runner_lock
                 .input
@@ -306,6 +313,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         "mouseup",
         |event: web_sys::MouseEvent, mut runner_lock| {
             if let Some(button) = button_from_mouse_event(&event) {
+                let modifiers = modifiers_from_mouse_event(&event);
+                runner_lock.input.raw.modifiers = modifiers;
+
                 let pos = pos_from_mouse_event(runner_lock.canvas_id(), &event);
                 let modifiers = runner_lock.input.raw.modifiers;
                 runner_lock
@@ -331,6 +341,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "mouseleave",
         |event: web_sys::MouseEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             runner_lock.input.raw.events.push(egui::Event::PointerGone);
             runner_lock.needs_repaint.repaint_asap();
             event.stop_propagation();
@@ -342,12 +355,14 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "touchstart",
         |event: web_sys::TouchEvent, mut runner_lock| {
+            let modifiers = modifiers_from_touch_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             let mut latest_touch_pos_id = runner_lock.input.latest_touch_pos_id;
             let pos =
                 pos_from_touch_event(runner_lock.canvas_id(), &event, &mut latest_touch_pos_id);
             runner_lock.input.latest_touch_pos_id = latest_touch_pos_id;
             runner_lock.input.latest_touch_pos = Some(pos);
-            let modifiers = runner_lock.input.raw.modifiers;
             runner_lock
                 .input
                 .raw
@@ -370,6 +385,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "touchmove",
         |event: web_sys::TouchEvent, mut runner_lock| {
+            let modifiers = modifiers_from_touch_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             let mut latest_touch_pos_id = runner_lock.input.latest_touch_pos_id;
             let pos =
                 pos_from_touch_event(runner_lock.canvas_id(), &event, &mut latest_touch_pos_id);
@@ -392,6 +410,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "touchend",
         |event: web_sys::TouchEvent, mut runner_lock| {
+            let modifiers = modifiers_from_touch_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             if let Some(pos) = runner_lock.input.latest_touch_pos {
                 let modifiers = runner_lock.input.raw.modifiers;
                 // First release mouse to click:
@@ -423,6 +444,9 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "touchcancel",
         |event: web_sys::TouchEvent, mut runner_lock| {
+            let modifiers = modifiers_from_touch_event(&event);
+            runner_lock.input.raw.modifiers = modifiers;
+
             push_touches(&mut runner_lock, egui::TouchPhase::Cancel, &event);
             event.stop_propagation();
             event.prevent_default();
@@ -433,6 +457,11 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "wheel",
         |event: web_sys::WheelEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(
+                &event.clone().dyn_into::<web_sys::MouseEvent>().unwrap(),
+            );
+            runner_lock.input.raw.modifiers = modifiers;
+
             let scroll_multiplier = match event.delta_mode() {
                 web_sys::WheelEvent::DOM_DELTA_PAGE => {
                     canvas_size_in_points(runner_lock.canvas_id()).y
@@ -478,6 +507,11 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "dragover",
         |event: web_sys::DragEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(
+                &event.clone().dyn_into::<web_sys::MouseEvent>().unwrap(),
+            );
+            runner_lock.input.raw.modifiers = modifiers;
+
             if let Some(data_transfer) = event.data_transfer() {
                 runner_lock.input.raw.hovered_files.clear();
                 for i in 0..data_transfer.items().length() {
@@ -499,6 +533,11 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
         &canvas,
         "dragleave",
         |event: web_sys::DragEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(
+                &event.clone().dyn_into::<web_sys::MouseEvent>().unwrap(),
+            );
+            runner_lock.input.raw.modifiers = modifiers;
+
             runner_lock.input.raw.hovered_files.clear();
             runner_lock.needs_repaint.repaint_asap();
             event.stop_propagation();
@@ -508,8 +547,12 @@ pub fn install_canvas_events(runner_container: &mut AppRunnerContainer) -> Resul
 
     runner_container.add_event_listener(&canvas, "drop", {
         let runner_ref = runner_container.runner.clone();
-
         move |event: web_sys::DragEvent, mut runner_lock| {
+            let modifiers = modifiers_from_mouse_event(
+                &event.clone().dyn_into::<web_sys::MouseEvent>().unwrap(),
+            );
+            runner_lock.input.raw.modifiers = modifiers;
+
             if let Some(data_transfer) = event.data_transfer() {
                 runner_lock.input.raw.hovered_files.clear();
                 runner_lock.needs_repaint.repaint_asap();
