@@ -359,6 +359,17 @@ mod glow_integration {
                 integration.egui_ctx.tessellate(shapes)
             };
 
+            // BEGIN ADDED
+            {
+                use glow::HasContext;
+                let gl: &glow::Context = &gl;
+                unsafe { gl.disable(glow::FRAMEBUFFER_SRGB); }
+                let mut needs_repaint = app.render_gl(&Box::new(gl));
+                unsafe { gl.enable(glow::FRAMEBUFFER_SRGB); }
+                // TODO: needs_repaint is not handled!
+            }
+            // END ADDED
+
             painter.paint_and_update_textures(
                 screen_size_in_pixels,
                 integration.egui_ctx.pixels_per_point(),
