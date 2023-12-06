@@ -317,7 +317,7 @@ pub(crate) fn install_canvas_events(runner_ref: &WebRunner) -> Result<(), JsValu
     )?;
 
     runner_ref.add_event_listener(
-        &canvas,
+        &web_sys::window().unwrap().document().unwrap(),
         "mousemove",
         |event: web_sys::MouseEvent, runner| {
             let pos = pos_from_mouse_event(runner.canvas_id(), &event);
@@ -328,29 +328,33 @@ pub(crate) fn install_canvas_events(runner_ref: &WebRunner) -> Result<(), JsValu
         },
     )?;
 
-    runner_ref.add_event_listener(&canvas, "mouseup", |event: web_sys::MouseEvent, runner| {
-        if let Some(button) = button_from_mouse_event(&event) {
-            let pos = pos_from_mouse_event(runner.canvas_id(), &event);
-            let modifiers = runner.input.raw.modifiers;
-            runner.input.raw.events.push(egui::Event::PointerButton {
-                pos,
-                button,
-                pressed: false,
-                modifiers,
-            });
+    runner_ref.add_event_listener(
+        &web_sys::window().unwrap().document().unwrap(),
+        "mouseup",
+        |event: web_sys::MouseEvent, runner| {
+            if let Some(button) = button_from_mouse_event(&event) {
+                let pos = pos_from_mouse_event(runner.canvas_id(), &event);
+                let modifiers = runner.input.raw.modifiers;
+                runner.input.raw.events.push(egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: false,
+                    modifiers,
+                });
 
-            // In Safari we are only allowed to write to the clipboard during the
-            // event callback, which is why we run the app logic here and now:
-            runner.logic();
+                // In Safari we are only allowed to write to the clipboard during the
+                // event callback, which is why we run the app logic here and now:
+                runner.logic();
 
-            // Make sure we paint the output of the above logic call asap:
-            runner.needs_repaint.repaint_asap();
+                // Make sure we paint the output of the above logic call asap:
+                runner.needs_repaint.repaint_asap();
 
-            text_agent::update_text_agent(runner);
+                text_agent::update_text_agent(runner);
+            }
+            event.stop_propagation();
+            event.prevent_default();
         }
-        event.stop_propagation();
-        event.prevent_default();
-    })?;
+    )?;
 
     runner_ref.add_event_listener(
         &canvas,
