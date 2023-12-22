@@ -151,7 +151,6 @@ fn resize_canvas_to_screen_size(canvas_id: &str, max_size_points: egui::Vec2) ->
 
     let canvas_size_pixels = pixels_per_point * canvas_real_size;
     let canvas_size_pixels = canvas_size_pixels.min(max_size_pixels);
-    let canvas_size_points = canvas_size_pixels / pixels_per_point;
 
     // Make sure that the height and width are always even numbers.
     // otherwise, the page renders blurry on some platforms.
@@ -164,14 +163,20 @@ fn resize_canvas_to_screen_size(canvas_id: &str, max_size_points: egui::Vec2) ->
         .style()
         .set_property(
             "width",
-            &format!("{}px", round_to_even(canvas_size_points.x)),
+            &format!(
+                "{}px",
+                round_to_even(canvas_size_pixels.x) / pixels_per_point
+            ),
         )
         .ok()?;
     canvas
         .style()
         .set_property(
             "height",
-            &format!("{}px", round_to_even(canvas_size_points.y)),
+            &format!(
+                "{}px",
+                round_to_even(canvas_size_pixels.y) / pixels_per_point
+            ),
         )
         .ok()?;
     canvas.set_width(round_to_even(canvas_size_pixels.x) as u32);
