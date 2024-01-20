@@ -196,10 +196,20 @@ impl Painter {
         if let Some(window) = window {
             let size = window.inner_size();
             if self.surfaces.get(&viewport_id).is_none() {
-                let surface = unsafe {
+                let mut surface = unsafe {
                     crate::profile_scope!("create_surface");
                     self.instance.create_surface(&window)?
                 };
+
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    surface.as_hal_mut::<wgpu_hal::metal::Api, _, _>(|x: Option<&mut <wgpu_hal::metal::Api as wgpu_hal::Api>::Surface>| {
+                        if let Some(x) = x {
+                            // reduce flickering in Metal/MacOS when resizing - see https://github.com/gfx-rs/wgpu/issues/2711
+                            x.present_with_transaction = true;
+                        }
+                    });
+                }
 
                 let render_state = if let Some(render_state) = &self.render_state {
                     render_state
