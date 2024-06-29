@@ -1,7 +1,7 @@
 #![warn(missing_docs)] // Let's keep `Ui` well-documented.
+#![allow(clippy::use_self)]
 
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{any::Any, hash::Hash, sync::Arc};
 
 use epaint::mutex::RwLock;
 
@@ -30,6 +30,7 @@ use crate::{
 /// ```
 pub struct Ui {
     /// ID of this ui.
+    ///
     /// Generated based on id of parent ui together with
     /// another source of child identity (e.g. window title).
     /// Acts like a namespace for child uis.
@@ -38,6 +39,7 @@ pub struct Ui {
     id: Id,
 
     /// This is used to create a unique interact ID for some widgets.
+    ///
     /// This value is based on where in the hierarchy of widgets this Ui is in,
     /// and the value is increment with each added child widget.
     /// This works as an Id source only as long as new widgets aren't added or removed.
@@ -73,7 +75,7 @@ impl Ui {
     /// [`SidePanel`], [`TopBottomPanel`], [`CentralPanel`], [`Window`] or [`Area`].
     pub fn new(ctx: Context, layer_id: LayerId, id: Id, max_rect: Rect, clip_rect: Rect) -> Self {
         let style = ctx.style();
-        Ui {
+        let ui = Ui {
             id,
             next_auto_id_source: id.with("auto").value(),
             painter: Painter::new(ctx, layer_id, clip_rect),
@@ -81,7 +83,20 @@ impl Ui {
             placer: Placer::new(max_rect, Layout::default()),
             enabled: true,
             menu_state: None,
-        }
+        };
+
+        // Register in the widget stack early, to ensure we are behind all widgets we contain:
+        let start_rect = Rect::NOTHING; // This will be overwritten when/if `interact_bg` is called
+        ui.ctx().create_widget(WidgetRect {
+            id: ui.id,
+            layer_id: ui.layer_id(),
+            rect: start_rect,
+            interact_rect: start_rect,
+            sense: Sense::hover(),
+            enabled: ui.enabled,
+        });
+
+        ui
     }
 
     /// Create a new [`Ui`] at a specific region.
@@ -99,16 +114,28 @@ impl Ui {
         crate::egui_assert!(!max_rect.any_nan());
         let next_auto_id_source = Id::new(self.next_auto_id_source).with("child").value();
         self.next_auto_id_source = self.next_auto_id_source.wrapping_add(1);
-        let menu_state = self.menu_state();
-        Ui {
+        let child_ui = Ui {
             id: self.id.with(id_source),
             next_auto_id_source,
             painter: self.painter.clone(),
             style: self.style.clone(),
             placer: Placer::new(max_rect, layout),
             enabled: self.enabled,
-            menu_state,
-        }
+            menu_state: self.menu_state.clone(),
+        };
+
+        // Register in the widget stack early, to ensure we are behind all widgets we contain:
+        let start_rect = Rect::NOTHING; // This will be overwritten when/if `interact_bg` is called
+        child_ui.ctx().create_widget(WidgetRect {
+            id: child_ui.id,
+            layer_id: child_ui.layer_id(),
+            rect: start_rect,
+            interact_rect: start_rect,
+            sense: Sense::hover(),
+            enabled: child_ui.enabled,
+        });
+
+        child_ui
     }
 
     // -------------------------------------------------
@@ -274,6 +301,26 @@ impl Ui {
         if !visible {
             self.painter.set_invisible();
         }
+    }
+
+    /// Make the widget in this [`Ui`] semi-transparent.
+    ///
+    /// `opacity` must be between 0.0 and 1.0, where 0.0 means fully transparent (i.e., invisible)
+    /// and 1.0 means fully opaque (i.e., the same as not calling the method at all).
+    ///
+    /// ### Example
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// ui.group(|ui| {
+    ///     ui.set_opacity(0.5);
+    ///     if ui.button("Half-transparent button").clicked() {
+    ///         /* … */
+    ///     }
+    /// });
+    /// # });
+    /// ```
+    pub fn set_opacity(&mut self, opacity: f32) {
+        self.painter.set_opacity(opacity);
     }
 
     /// Read the [`Layout`].
@@ -625,44 +672,55 @@ impl Ui {
 impl Ui {
     /// Check for clicks, drags and/or hover on a specific region of this [`Ui`].
     pub fn interact(&self, rect: Rect, id: Id, sense: Sense) -> Response {
-        self.ctx().interact(
-            self.clip_rect(),
-            self.spacing().item_spacing,
-            self.layer_id(),
+        self.ctx().create_widget(WidgetRect {
             id,
+            layer_id: self.layer_id(),
             rect,
+            interact_rect: self.clip_rect().intersect(rect),
             sense,
-            self.enabled,
-        )
+            enabled: self.enabled,
+        })
     }
 
-    /// Check for clicks, and drags on a specific region that is hovered.
-    /// This can be used once you have checked that some shape you are painting has been hovered,
-    /// and want to check for clicks and drags on hovered items this frame.
-    /// The given [`Rect`] should approximately be where the thing is,
-    /// as it is just where warnings will be painted if there is an [`Id`] clash.
+    /// Deprecated: use [`Self::interact`] instead.
+    #[deprecated = "The contains_pointer argument is ignored. Use `ui.interact` instead."]
     pub fn interact_with_hovered(
         &self,
         rect: Rect,
-        hovered: bool,
+        _contains_pointer: bool,
         id: Id,
         sense: Sense,
     ) -> Response {
-        self.ctx()
-            .interact_with_hovered(self.layer_id(), id, rect, sense, self.enabled, hovered)
+        self.interact(rect, id, sense)
+    }
+
+    /// Interact with the background of this [`Ui`],
+    /// i.e. behind all the widgets.
+    ///
+    /// The rectangle of the [`Response`] (and interactive area) will be [`Self::min_rect`].
+    pub fn interact_bg(&self, sense: Sense) -> Response {
+        // This will update the WidgetRect that was first created in `Ui::new`.
+        self.interact(self.min_rect(), self.id, sense)
     }
 
     /// Is the pointer (mouse/touch) above this rectangle in this [`Ui`]?
     ///
     /// The `clip_rect` and layer of this [`Ui`] will be respected, so, for instance,
     /// if this [`Ui`] is behind some other window, this will always return `false`.
+    ///
+    /// However, this will NOT check if any other _widget_ in the same layer is covering this widget. For that, use [`Response::contains_pointer`] instead.
     pub fn rect_contains_pointer(&self, rect: Rect) -> bool {
         self.ctx()
             .rect_contains_pointer(self.layer_id(), self.clip_rect().intersect(rect))
     }
 
-    /// Is the pointer (mouse/touch) above this [`Ui`]?
+    /// Is the pointer (mouse/touch) above the current [`Ui`]?
+    ///
     /// Equivalent to `ui.rect_contains_pointer(ui.min_rect())`
+    ///
+    /// Note that this tests against the _current_ [`Ui::min_rect`].
+    /// If you want to test against the final `min_rect`,
+    /// use [`Self::interact_bg`] instead.
     pub fn ui_contains_pointer(&self) -> bool {
         self.rect_contains_pointer(self.min_rect())
     }
@@ -949,6 +1007,7 @@ impl Ui {
 
     /// Adjust the scroll position of any parent [`ScrollArea`] so that the given [`Rect`] becomes visible.
     ///
+    /// If `align` is [`Align::TOP`] it means "put the top of the rect at the top of the scroll area", etc.
     /// If `align` is `None`, it'll scroll enough to bring the cursor into view.
     ///
     /// See also: [`Response::scroll_to_me`], [`Ui::scroll_to_cursor`]. [`Ui::scroll_with_delta`]..
@@ -975,6 +1034,7 @@ impl Ui {
 
     /// Adjust the scroll position of any parent [`ScrollArea`] so that the cursor (where the next widget goes) becomes visible.
     ///
+    /// If `align` is [`Align::TOP`] it means "put the top of the rect at the top of the scroll area", etc.
     /// If `align` is not provided, it'll scroll enough to bring the cursor into view.
     ///
     /// See also: [`Response::scroll_to_me`], [`Ui::scroll_to_rect`]. [`Ui::scroll_with_delta`].
@@ -1032,7 +1092,7 @@ impl Ui {
     /// ```
     pub fn scroll_with_delta(&self, delta: Vec2) {
         self.ctx()
-            .frame_state_mut(|state| state.scroll_delta += delta);
+            .input_mut(|input| input.smooth_scroll_delta += delta);
     }
 }
 
@@ -1746,6 +1806,9 @@ impl Ui {
     }
 
     /// A [`CollapsingHeader`] that starts out collapsed.
+    ///
+    /// The name must be unique within the current parent,
+    /// or you need to use [`CollapsingHeader::id_source`].
     pub fn collapsing<R>(
         &mut self,
         heading: impl Into<WidgetText>,
@@ -2111,6 +2174,111 @@ impl Ui {
         result
     }
 
+    /// Create something that can be drag-and-dropped.
+    ///
+    /// The `id` needs to be globally unique.
+    /// The payload is what will be dropped if the user starts dragging.
+    ///
+    /// In contrast to [`Response::dnd_set_drag_payload`],
+    /// this function will paint the widget at the mouse cursor while the user is dragging.
+    #[doc(alias = "drag and drop")]
+    pub fn dnd_drag_source<Payload, R>(
+        &mut self,
+        id: Id,
+        payload: Payload,
+        add_contents: impl FnOnce(&mut Self) -> R,
+    ) -> InnerResponse<R>
+    where
+        Payload: Any + Send + Sync,
+    {
+        let is_being_dragged = self.ctx().is_being_dragged(id);
+
+        if is_being_dragged {
+            crate::DragAndDrop::set_payload(self.ctx(), payload);
+
+            // Paint the body to a new layer:
+            let layer_id = LayerId::new(Order::Tooltip, id);
+            let InnerResponse { inner, response } = self.with_layer_id(layer_id, add_contents);
+
+            // Now we move the visuals of the body to where the mouse is.
+            // Normally you need to decide a location for a widget first,
+            // because otherwise that widget cannot interact with the mouse.
+            // However, a dragged component cannot be interacted with anyway
+            // (anything with `Order::Tooltip` always gets an empty [`Response`])
+            // So this is fine!
+
+            if let Some(pointer_pos) = self.ctx().pointer_interact_pos() {
+                let delta = pointer_pos - response.rect.center();
+                self.ctx()
+                    .transform_layer_shapes(layer_id, emath::TSTransform::from_translation(delta));
+            }
+
+            InnerResponse::new(inner, response)
+        } else {
+            let InnerResponse { inner, response } = self.scope(add_contents);
+
+            // Check for drags:
+            let dnd_response = self
+                .interact(response.rect, id, Sense::drag())
+                .on_hover_cursor(CursorIcon::Grab);
+
+            InnerResponse::new(inner, dnd_response | response)
+        }
+    }
+
+    /// Surround the given ui with a frame which
+    /// changes colors when you can drop something onto it.
+    ///
+    /// Returns the dropped item, if it was released this frame.
+    ///
+    /// The given frame is used for its margins, but it color is ignored.
+    #[doc(alias = "drag and drop")]
+    pub fn dnd_drop_zone<Payload, R>(
+        &mut self,
+        frame: Frame,
+        add_contents: impl FnOnce(&mut Ui) -> R,
+    ) -> (InnerResponse<R>, Option<Arc<Payload>>)
+    where
+        Payload: Any + Send + Sync,
+    {
+        let is_anything_being_dragged = DragAndDrop::has_any_payload(self.ctx());
+        let can_accept_what_is_being_dragged =
+            DragAndDrop::has_payload_of_type::<Payload>(self.ctx());
+
+        let mut frame = frame.begin(self);
+        let inner = add_contents(&mut frame.content_ui);
+        let response = frame.allocate_space(self);
+
+        // NOTE: we use `response.contains_pointer` here instead of `hovered`, because
+        // `hovered` is always false when another widget is being dragged.
+        let style = if is_anything_being_dragged
+            && can_accept_what_is_being_dragged
+            && response.contains_pointer()
+        {
+            self.visuals().widgets.active
+        } else {
+            self.visuals().widgets.inactive
+        };
+
+        let mut fill = style.bg_fill;
+        let mut stroke = style.bg_stroke;
+
+        if is_anything_being_dragged && !can_accept_what_is_being_dragged {
+            // When dragging something else, show that it can't be dropped here:
+            fill = self.visuals().gray_out(fill);
+            stroke.color = self.visuals().gray_out(stroke.color);
+        }
+
+        frame.frame.fill = fill;
+        frame.frame.stroke = stroke;
+
+        frame.paint(self);
+
+        let payload = response.dnd_release_payload::<Payload>();
+
+        (InnerResponse { inner, response }, payload)
+    }
+
     /// Close the menu we are in (including submenus), if any.
     ///
     /// See also: [`Self::menu_button`] and [`Response::context_menu`].
@@ -2119,10 +2287,6 @@ impl Ui {
             menu_state.write().close();
         }
         self.menu_state = None;
-    }
-
-    pub(crate) fn menu_state(&self) -> Option<Arc<RwLock<MenuState>>> {
-        self.menu_state.clone()
     }
 
     pub(crate) fn set_menu_state(&mut self, menu_state: Option<Arc<RwLock<MenuState>>>) {
@@ -2269,7 +2433,8 @@ fn register_rect(ui: &Ui, rect: Rect) {
     if !callstack.is_empty() {
         let font_id = FontId::monospace(12.0);
         let text = format!("{callstack}\n\n(click to copy)");
-        let galley = painter.layout_no_wrap(text, font_id, Color32::WHITE);
+        let text_color = Color32::WHITE;
+        let galley = painter.layout_no_wrap(text, font_id, text_color);
 
         // Position the text either under or above:
         let screen_rect = ui.ctx().screen_rect();
@@ -2299,7 +2464,7 @@ fn register_rect(ui: &Ui, rect: Rect) {
         };
         let text_rect = Rect::from_min_size(text_pos, galley.size());
         painter.rect(text_rect, 0.0, text_bg_color, (1.0, text_rect_stroke_color));
-        painter.galley(text_pos, galley);
+        painter.galley(text_pos, galley, text_color);
 
         if ui.input(|i| i.pointer.any_click()) {
             ui.ctx().copy_text(callstack);

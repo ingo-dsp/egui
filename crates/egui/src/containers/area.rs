@@ -48,7 +48,7 @@ impl State {
 ///
 /// ```
 /// # egui::__run_test_ctx(|ctx| {
-/// egui::Area::new("my_area")
+/// egui::Area::new(egui::Id::new("my_area"))
 ///     .fixed_pos(egui::pos2(32.0, 32.0))
 ///     .show(ctx, |ui| {
 ///         ui.label("Floating text!");
@@ -61,6 +61,7 @@ impl State {
 #[derive(Clone, Copy, Debug)]
 pub struct Area {
     pub(crate) id: Id,
+    sense: Option<Sense>,
     movable: bool,
     interactable: bool,
     enabled: bool,
@@ -74,9 +75,11 @@ pub struct Area {
 }
 
 impl Area {
-    pub fn new(id: impl Into<Id>) -> Self {
+    /// The `id` must be globally unique.
+    pub fn new(id: Id) -> Self {
         Self {
-            id: id.into(),
+            id,
+            sense: None,
             movable: true,
             interactable: true,
             constrain: false,
@@ -90,6 +93,9 @@ impl Area {
         }
     }
 
+    /// Let's you change the `id` that you assigned in [`Self::new`].
+    ///
+    /// The `id` must be globally unique.
     #[inline]
     pub fn id(mut self, id: Id) -> Self {
         self.id = id;
@@ -110,7 +116,7 @@ impl Area {
         self
     }
 
-    /// moveable by dragging the area?
+    /// Moveable by dragging the area?
     #[inline]
     pub fn movable(mut self, movable: bool) -> Self {
         self.movable = movable;
@@ -132,6 +138,15 @@ impl Area {
     pub fn interactable(mut self, interactable: bool) -> Self {
         self.interactable = interactable;
         self.movable &= interactable;
+        self
+    }
+
+    /// Explicitly set a sense.
+    ///
+    /// If not set, this will default to `Sense::drag()` if movable, `Sense::click()` if interactable, and `Sense::hover()` otherwise.
+    #[inline]
+    pub fn sense(mut self, sense: Sense) -> Self {
+        self.sense = Some(sense);
         self
     }
 
@@ -169,13 +184,6 @@ impl Area {
     #[inline]
     pub fn constrain_to(mut self, constrain_rect: Rect) -> Self {
         self.constrain = true;
-        self.constrain_rect = Some(constrain_rect);
-        self
-    }
-
-    #[deprecated = "Use `constrain_to` instead"]
-    #[inline]
-    pub fn drag_bounds(mut self, constrain_rect: Rect) -> Self {
         self.constrain_rect = Some(constrain_rect);
         self
     }
@@ -256,8 +264,9 @@ impl Area {
     }
 
     pub(crate) fn begin(self, ctx: &Context) -> Prepared {
-        let Area {
+        let Self {
             id,
+            sense,
             movable,
             order,
             interactable,
@@ -272,7 +281,13 @@ impl Area {
 
         let layer_id = LayerId::new(order, id);
 
-        let state = ctx.memory(|mem| mem.areas().get(id).copied());
+        let state = ctx
+            .memory(|mem| mem.areas().get(id).copied())
+            .map(|mut state| {
+                // override the saved state with the correct value
+                state.pivot = pivot;
+                state
+            });
         let is_new = state.is_none();
         if is_new {
             ctx.request_repaint(); // if we don't know the previous size we are likely drawing the area in the wrong place
@@ -296,26 +311,27 @@ impl Area {
         // interact right away to prevent frame-delay
         let mut move_response = {
             let interact_id = layer_id.id.with("move");
-            let sense = if movable {
-                Sense::click_and_drag()
-            } else if interactable {
-                Sense::click() // allow clicks to bring to front
-            } else {
-                Sense::hover()
-            };
+            let sense = sense.unwrap_or_else(|| {
+                if movable {
+                    Sense::drag()
+                } else if interactable {
+                    Sense::click() // allow clicks to bring to front
+                } else {
+                    Sense::hover()
+                }
+            });
 
-            let move_response = ctx.interact(
-                Rect::EVERYTHING,
-                ctx.style().spacing.item_spacing,
+            let move_response = ctx.create_widget(WidgetRect {
+                id: interact_id,
                 layer_id,
-                interact_id,
-                state.rect(),
+                rect: state.rect(),
+                interact_rect: state.rect(),
                 sense,
                 enabled,
-            );
+            });
 
             if movable && move_response.dragged() {
-                state.pivot_pos += ctx.input(|i| i.pointer.delta());
+                state.pivot_pos += move_response.drag_delta();
             }
 
             if (move_response.dragged() || move_response.clicked())
@@ -339,7 +355,8 @@ impl Area {
         state.set_left_top_pos(ctx.round_pos_to_pixels(state.left_top_pos()));
 
         // Update responsbe with posisbly moved/constrained rect:
-        move_response = move_response.with_new_rect(state.rect());
+        move_response.rect = state.rect();
+        move_response.interact_rect = state.rect();
 
         Prepared {
             layer_id,
@@ -368,7 +385,7 @@ impl Area {
         let layer_id = LayerId::new(self.order, self.id);
         let area_rect = ctx.memory(|mem| mem.areas().get(self.id).map(|area| area.rect()));
         if let Some(area_rect) = area_rect {
-            let clip_rect = ctx.available_rect();
+            let clip_rect = Rect::EVERYTHING;
             let painter = Painter::new(ctx.clone(), layer_id, clip_rect);
 
             // shrinkage: looks kinda a bad on its own
@@ -421,12 +438,7 @@ impl Prepared {
                 .at_least(self.state.left_top_pos() + Vec2::splat(32.0)),
         );
 
-        let shadow_radius = ctx.style().visuals.window_shadow.extrusion; // hacky
-        let clip_rect_margin = ctx.style().visuals.clip_rect_margin.max(shadow_radius);
-
-        let clip_rect = Rect::from_min_max(self.state.left_top_pos(), constrain_rect.max)
-            .expand(clip_rect_margin)
-            .intersect(constrain_rect);
+        let clip_rect = constrain_rect; // Don't paint outside our bounds
 
         let mut ui = Ui::new(
             ctx.clone(),
@@ -442,7 +454,7 @@ impl Prepared {
 
     #[allow(clippy::needless_pass_by_value)] // intentional to swallow up `content_ui`.
     pub(crate) fn end(self, ctx: &Context, content_ui: Ui) -> Response {
-        let Prepared {
+        let Self {
             layer_id,
             mut state,
             move_response,

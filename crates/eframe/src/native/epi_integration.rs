@@ -1,10 +1,9 @@
 //! Common tools used by [`super::glow_integration`] and [`super::wgpu_integration`].
 
-use std::time::Instant;
-
+use web_time::Instant;
 use winit::event_loop::EventLoopWindowTarget;
 
-use raw_window_handle::{HasRawDisplayHandle as _, HasRawWindowHandle as _};
+use raw_window_handle::{HasDisplayHandle as _, HasWindowHandle as _};
 
 use egui::{DeferredViewportUiCallback, NumExt as _, ViewportBuilder, ViewportId};
 use egui_winit::{EventResponse, WindowSettings};
@@ -152,7 +151,7 @@ impl EpiIntegration {
         app_name: &str,
         native_options: &crate::NativeOptions,
         storage: Option<Box<dyn epi::Storage>>,
-        #[cfg(feature = "glow")] gl: Option<std::rc::Rc<glow::Context>>,
+        #[cfg(feature = "glow")] gl: Option<std::sync::Arc<glow::Context>>,
         #[cfg(feature = "wgpu")] wgpu_render_state: Option<egui_wgpu::RenderState>,
     ) -> Self {
         let frame = epi::Frame {
@@ -165,8 +164,8 @@ impl EpiIntegration {
             gl,
             #[cfg(feature = "wgpu")]
             wgpu_render_state,
-            raw_display_handle: window.raw_display_handle(),
-            raw_window_handle: window.raw_window_handle(),
+            raw_display_handle: window.display_handle().map(|h| h.as_raw()),
+            raw_window_handle: window.window_handle().map(|h| h.as_raw()),
         };
 
         let icon = native_options
@@ -231,7 +230,7 @@ impl EpiIntegration {
         &mut self,
         window: &winit::window::Window,
         egui_winit: &mut egui_winit::State,
-        event: &winit::event::WindowEvent<'_>,
+        event: &winit::event::WindowEvent,
     ) -> EventResponse {
         crate::profile_function!(egui_winit::short_window_event_description(event));
 
@@ -255,12 +254,10 @@ impl EpiIntegration {
             _ => {}
         }
 
-        egui_winit.update_pixels_per_point(&self.egui_ctx, window);
-        egui_winit.on_window_event(&self.egui_ctx, event)
+        egui_winit.on_window_event(window, event)
     }
 
     pub fn pre_update(&mut self) {
-        self.frame_start = Instant::now();
         self.app_icon_setter.update();
     }
 
@@ -276,6 +273,8 @@ impl EpiIntegration {
         raw_input.time = Some(self.beginning.elapsed().as_secs_f64());
 
         let close_requested = raw_input.viewport().close_requested();
+
+        app.raw_input_hook(&self.egui_ctx, &mut raw_input);
 
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             if let Some(viewport_ui_cb) = viewport_ui_cb {
@@ -305,9 +304,8 @@ impl EpiIntegration {
         std::mem::take(&mut self.pending_full_output)
     }
 
-    pub fn post_update(&mut self) {
-        let frame_time = self.frame_start.elapsed().as_secs_f64() as f32;
-        self.frame.info.cpu_usage = Some(frame_time);
+    pub fn report_frame_time(&mut self, seconds: f32) {
+        self.frame.info.cpu_usage = Some(seconds);
     }
 
     pub fn post_rendering(&mut self, window: &winit::window::Window) {

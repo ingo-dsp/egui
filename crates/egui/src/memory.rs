@@ -1,12 +1,11 @@
 #![warn(missing_docs)] // Let's keep this file well-documented.` to memory.rs
 
-use epaint::{emath::Rangef, vec2, Vec2};
+use ahash::HashMap;
+use epaint::emath::TSTransform;
 
 use crate::{
-    area,
-    window::{self, WindowInteraction},
-    EventFilter, Id, IdMap, InputState, LayerId, Pos2, Rect, Style, ViewportId, ViewportIdMap,
-    ViewportIdSet,
+    area, vec2, EventFilter, Id, IdMap, LayerId, Order, Pos2, Rangef, RawInput, Rect, Style, Vec2,
+    ViewportId, ViewportIdMap, ViewportIdSet,
 };
 
 // ----------------------------------------------------------------------------
@@ -39,7 +38,7 @@ pub struct Memory {
     ///
     /// This will be saved between different program runs if you use the `persistence` feature.
     ///
-    /// To store a state common for all your widgets (a singleton), use [`Id::null`] as the key.
+    /// To store a state common for all your widgets (a singleton), use [`Id::NULL`] as the key.
     pub data: crate::util::IdTypeMap,
 
     // ------------------------------------------
@@ -79,9 +78,6 @@ pub struct Memory {
     #[cfg_attr(feature = "persistence", serde(skip))]
     pub(crate) viewport_id: ViewportId,
 
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    pub(crate) drag_value: crate::widgets::drag_value::MonoState,
-
     /// Which popup-window is open (if any)?
     /// Could be a combo box, color picker, menu etc.
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -90,15 +86,18 @@ pub struct Memory {
     #[cfg_attr(feature = "persistence", serde(skip))]
     everything_is_visible: bool,
 
+    /// Transforms per layer
+    pub layer_transforms: HashMap<LayerId, TSTransform>,
+
     // -------------------------------------------------
     // Per-viewport:
     areas: ViewportIdMap<Areas>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
-    pub(crate) interactions: ViewportIdMap<Interaction>,
+    pub(crate) interactions: ViewportIdMap<InteractionState>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
-    window_interactions: ViewportIdMap<window::WindowInteraction>,
+    pub(crate) focus: ViewportIdMap<Focus>,
 }
 
 impl Default for Memory {
@@ -109,10 +108,10 @@ impl Default for Memory {
             caches: Default::default(),
             new_font_definitions: Default::default(),
             interactions: Default::default(),
+            focus: Default::default(),
             viewport_id: Default::default(),
-            window_interactions: Default::default(),
-            drag_value: Default::default(),
             areas: Default::default(),
+            layer_transforms: Default::default(),
             popup: Default::default(),
             everything_is_visible: Default::default(),
         };
@@ -150,12 +149,9 @@ enum FocusDirection {
 impl FocusDirection {
     fn is_cardinal(&self) -> bool {
         match self {
-            FocusDirection::Up
-            | FocusDirection::Right
-            | FocusDirection::Down
-            | FocusDirection::Left => true,
+            Self::Up | Self::Right | Self::Down | Self::Left => true,
 
-            FocusDirection::Previous | FocusDirection::Next | FocusDirection::None => false,
+            Self::Previous | Self::Next | Self::None => false,
         }
     }
 }
@@ -163,7 +159,9 @@ impl FocusDirection {
 // ----------------------------------------------------------------------------
 
 /// Some global options that you can read and write.
-#[derive(Clone, Debug)]
+///
+/// See also [`crate::style::DebugOptions`].
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct Options {
@@ -187,11 +185,24 @@ pub struct Options {
     /// presses Cmd+Plus, Cmd+Minus or Cmd+0, just like in a browser.
     ///
     /// This is `true` by default.
+    ///
+    /// On the web-backend of `eframe` this is set to false by default,
+    /// so that the zoom shortcuts are handled exclusively by the browser,
+    /// which will change the `native_pixels_per_point` (`devicePixelRatio`).
+    /// You can still zoom egui independently by calling [`crate::Context::set_zoom_factor`],
+    /// which will be applied on top of the browsers global zoom.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub zoom_with_keyboard: bool,
 
     /// Controls the tessellator.
     pub tessellation_options: epaint::TessellationOptions,
+
+    /// If any widget moves or changes id, repaint everything.
+    ///
+    /// It is recommended you keep this OFF, because
+    /// it is know to cause endless repaints, for unknown reasons
+    /// (<https://github.com/rerun-io/rerun/issues/5018>).
+    pub repaint_on_widget_change: bool,
 
     /// This is a signal to any backend that we want the [`crate::PlatformOutput::events`] read out loud.
     ///
@@ -225,6 +236,7 @@ impl Default for Options {
             zoom_factor: 1.0,
             zoom_with_keyboard: true,
             tessellation_options: Default::default(),
+            repaint_on_widget_change: false,
             screen_reader: false,
             preload_font_glyphs: true,
             warn_on_id_clash: cfg!(debug_assertions),
@@ -232,8 +244,61 @@ impl Default for Options {
     }
 }
 
+impl Options {
+    /// Show the options in the ui.
+    pub fn ui(&mut self, ui: &mut crate::Ui) {
+        let Self {
+            style,          // covered above
+            zoom_factor: _, // TODO(emilk)
+            zoom_with_keyboard,
+            tessellation_options,
+            repaint_on_widget_change,
+            screen_reader: _, // needs to come from the integration
+            preload_font_glyphs: _,
+            warn_on_id_clash,
+        } = self;
+
+        use crate::Widget as _;
+
+        CollapsingHeader::new("⚙ Options")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.checkbox(
+                    repaint_on_widget_change,
+                    "Repaint if any widget moves or changes id",
+                );
+
+                ui.checkbox(
+                    zoom_with_keyboard,
+                    "Zoom with keyboard (Cmd +, Cmd -, Cmd 0)",
+                );
+
+                ui.checkbox(warn_on_id_clash, "Warn if two widgets have the same Id");
+            });
+
+        use crate::containers::*;
+        CollapsingHeader::new("🎑 Style")
+            .default_open(true)
+            .show(ui, |ui| {
+                std::sync::Arc::make_mut(style).ui(ui);
+            });
+
+        CollapsingHeader::new("✒ Painting")
+            .default_open(true)
+            .show(ui, |ui| {
+                tessellation_options.ui(ui);
+                ui.vertical_centered(|ui| crate::reset_button(ui, tessellation_options));
+            });
+
+        ui.vertical_centered(|ui| crate::reset_button(ui, self));
+    }
+}
+
 // ----------------------------------------------------------------------------
 
+/// The state of the interaction in egui,
+/// i.e. what is being dragged.
+///
 /// Say there is a button in a scroll area.
 /// If the user clicks the button, the button should click.
 /// If the user drags the button we should scroll the scroll area.
@@ -242,29 +307,17 @@ impl Default for Options {
 /// If the user releases the button without moving the mouse we register it as a click on `click_id`.
 /// If the cursor moves too much we clear the `click_id` and start passing move events to `drag_id`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Interaction {
+pub(crate) struct InteractionState {
     /// A widget interested in clicks that has a mouse press on it.
-    pub click_id: Option<Id>,
+    pub potential_click_id: Option<Id>,
 
     /// A widget interested in drags that has a mouse press on it.
-    pub drag_id: Option<Id>,
-
-    pub focus: Focus,
-
-    /// HACK: windows have low priority on dragging.
-    /// This is so that if you drag a slider in a window,
-    /// the slider will steal the drag away from the window.
-    /// This is needed because we do window interaction first (to prevent frame delay),
-    /// and then do content layout.
-    pub drag_is_window: bool,
-
-    /// Any interest in catching clicks this frame?
-    /// Cleared to false at start of each frame.
-    pub click_interest: bool,
-
-    /// Any interest in catching clicks this frame?
-    /// Cleared to false at start of each frame.
-    pub drag_interest: bool,
+    ///
+    /// Note that this is set as soon as the mouse is pressed,
+    /// so the widget may not yet be marked as "dragged",
+    /// as that can only happen after the mouse has moved a bit
+    /// (at least if the widget is interesated in both clicks and drags).
+    pub potential_drag_id: Option<Id>,
 }
 
 /// Keeps tracks of what widget has keyboard focus
@@ -312,31 +365,10 @@ impl FocusWidget {
     }
 }
 
-impl Interaction {
+impl InteractionState {
     /// Are we currently clicking or dragging an egui widget?
     pub fn is_using_pointer(&self) -> bool {
-        self.click_id.is_some() || self.drag_id.is_some()
-    }
-
-    fn begin_frame(
-        &mut self,
-        prev_input: &crate::input_state::InputState,
-        new_input: &crate::data::input::RawInput,
-    ) {
-        self.click_interest = false;
-        self.drag_interest = false;
-
-        if !prev_input.pointer.could_any_button_be_click() {
-            self.click_id = None;
-        }
-
-        if !prev_input.pointer.any_down() || prev_input.pointer.latest_pos().is_none() {
-            // pointer button was not down last frame
-            self.click_id = None;
-            self.drag_id = None;
-        }
-
-        self.focus.begin_frame(new_input);
+        self.potential_click_id.is_some() || self.potential_drag_id.is_some()
     }
 }
 
@@ -495,9 +527,7 @@ impl Focus {
             }
         }
 
-        let Some(current_focused) = self.focused_widget else {
-            return None;
-        };
+        let current_focused = self.focused_widget?;
 
         // In what direction we are looking for the next widget.
         let search_direction = match self.focus_direction {
@@ -520,9 +550,7 @@ impl Focus {
             }
         });
 
-        let Some(current_rect) = self.focus_widgets_cache.get(&current_focused.id) else {
-            return None;
-        };
+        let current_rect = self.focus_widgets_cache.get(&current_focused.id)?;
 
         let mut best_score = std::f32::INFINITY;
         let mut best_id = None;
@@ -561,37 +589,29 @@ impl Focus {
 }
 
 impl Memory {
-    pub(crate) fn begin_frame(
-        &mut self,
-        prev_input: &crate::input_state::InputState,
-        new_input: &crate::data::input::RawInput,
-        viewports: &ViewportIdSet,
-    ) {
+    pub(crate) fn begin_frame(&mut self, new_raw_input: &RawInput, viewports: &ViewportIdSet) {
         crate::profile_function!();
+
+        self.viewport_id = new_raw_input.viewport_id;
 
         // Cleanup
         self.interactions.retain(|id, _| viewports.contains(id));
         self.areas.retain(|id, _| viewports.contains(id));
-        self.window_interactions
-            .retain(|id, _| viewports.contains(id));
 
-        self.viewport_id = new_input.viewport_id;
-        self.interactions
-            .entry(self.viewport_id)
-            .or_default()
-            .begin_frame(prev_input, new_input);
         self.areas.entry(self.viewport_id).or_default();
 
-        if !prev_input.pointer.any_down() {
-            self.window_interactions.remove(&self.viewport_id);
-        }
+        // self.interactions  is handled elsewhere
+
+        self.focus
+            .entry(self.viewport_id)
+            .or_default()
+            .begin_frame(new_raw_input);
     }
 
-    pub(crate) fn end_frame(&mut self, input: &InputState, used_ids: &IdMap<Rect>) {
+    pub(crate) fn end_frame(&mut self, used_ids: &IdMap<Rect>) {
         self.caches.update();
         self.areas_mut().end_frame();
-        self.interaction_mut().focus.end_frame(used_ids);
-        self.drag_value.end_frame(input);
+        self.focus_mut().end_frame(used_ids);
     }
 
     pub(crate) fn set_viewport_id(&mut self, viewport_id: ViewportId) {
@@ -611,8 +631,8 @@ impl Memory {
     }
 
     /// Top-most layer at the given position.
-    pub fn layer_id_at(&self, pos: Pos2, resize_interact_radius_side: f32) -> Option<LayerId> {
-        self.areas().layer_id_at(pos, resize_interact_radius_side)
+    pub fn layer_id_at(&self, pos: Pos2) -> Option<LayerId> {
+        self.areas().layer_id_at(pos, &self.layer_transforms)
     }
 
     /// An iterator over all layers. Back-to-front. Top is last.
@@ -621,7 +641,7 @@ impl Memory {
     }
 
     pub(crate) fn had_focus_last_frame(&self, id: Id) -> bool {
-        self.interaction().focus.id_previous_frame == Some(id)
+        self.focus().and_then(|f| f.id_previous_frame) == Some(id)
     }
 
     /// True if the given widget had keyboard focus last frame, but not this one.
@@ -642,12 +662,12 @@ impl Memory {
     /// from the window and back.
     #[inline(always)]
     pub fn has_focus(&self, id: Id) -> bool {
-        self.interaction().focus.focused() == Some(id)
+        self.focused() == Some(id)
     }
 
     /// Which widget has keyboard focus?
-    pub fn focus(&self) -> Option<Id> {
-        self.interaction().focus.focused()
+    pub fn focused(&self) -> Option<Id> {
+        self.focus().and_then(|f| f.focused())
     }
 
     /// Set an event filter for a widget.
@@ -658,7 +678,7 @@ impl Memory {
     /// You must first give focus to the widget before calling this.
     pub fn set_focus_lock_filter(&mut self, id: Id, event_filter: EventFilter) {
         if self.had_focus_last_frame(id) && self.has_focus(id) {
-            if let Some(focused) = &mut self.interaction_mut().focus.focused_widget {
+            if let Some(focused) = &mut self.focus_mut().focused_widget {
                 if focused.id == id {
                     focused.filter = event_filter;
                 }
@@ -666,35 +686,20 @@ impl Memory {
         }
     }
 
-    /// Set an event filter for a widget.
-    ///
-    /// You must first give focus to the widget before calling this.
-    #[deprecated = "Use set_focus_lock_filter instead"]
-    pub fn lock_focus(&mut self, id: Id, lock_focus: bool) {
-        self.set_focus_lock_filter(
-            id,
-            EventFilter {
-                tab: lock_focus,
-                arrows: lock_focus,
-                escape: false,
-            },
-        );
-    }
-
     /// Give keyboard focus to a specific widget.
     /// See also [`crate::Response::request_focus`].
     #[inline(always)]
     pub fn request_focus(&mut self, id: Id) {
-        self.interaction_mut().focus.focused_widget = Some(FocusWidget::new(id));
+        self.focus_mut().focused_widget = Some(FocusWidget::new(id));
     }
 
     /// Surrender keyboard focus for a specific widget.
     /// See also [`crate::Response::surrender_focus`].
     #[inline(always)]
     pub fn surrender_focus(&mut self, id: Id) {
-        let interaction = self.interaction_mut();
-        if interaction.focus.focused() == Some(id) {
-            interaction.focus.focused_widget = None;
+        let focus = self.focus_mut();
+        if focus.focused() == Some(id) {
+            focus.focused_widget = None;
         }
     }
 
@@ -707,37 +712,68 @@ impl Memory {
     /// and rendered correctly in a single frame.
     #[inline(always)]
     pub fn interested_in_focus(&mut self, id: Id) {
-        self.interaction_mut().focus.interested_in_focus(id);
+        self.focus_mut().interested_in_focus(id);
     }
 
     /// Stop editing of active [`TextEdit`](crate::TextEdit) (if any).
     #[inline(always)]
     pub fn stop_text_input(&mut self) {
-        self.interaction_mut().focus.focused_widget = None;
+        self.focus_mut().focused_widget = None;
     }
 
     /// Is any widget being dragged?
+    #[deprecated = "Use `Context::dragged_id` instead"]
     #[inline(always)]
     pub fn is_anything_being_dragged(&self) -> bool {
-        self.interaction().drag_id.is_some()
+        self.interaction().potential_drag_id.is_some()
     }
 
     /// Is this specific widget being dragged?
+    ///
+    /// Usually it is better to use [`crate::Response::dragged`].
+    ///
+    /// A widget that sense both clicks and drags is only marked as "dragged"
+    /// when the mouse has moved a bit, but `is_being_dragged` will return true immediately.
+    #[deprecated = "Use `Context::is_being_dragged` instead"]
     #[inline(always)]
     pub fn is_being_dragged(&self, id: Id) -> bool {
-        self.interaction().drag_id == Some(id)
+        self.interaction().potential_drag_id == Some(id)
+    }
+
+    /// Get the id of the widget being dragged, if any.
+    ///
+    /// Note that this is set as soon as the mouse is pressed,
+    /// so the widget may not yet be marked as "dragged",
+    /// as that can only happen after the mouse has moved a bit
+    /// (at least if the widget is interesated in both clicks and drags).
+    #[deprecated = "Use `Context::dragged_id` instead"]
+    #[inline(always)]
+    pub fn dragged_id(&self) -> Option<Id> {
+        self.interaction().potential_drag_id
     }
 
     /// Set which widget is being dragged.
     #[inline(always)]
+    #[deprecated = "Use `Context::set_dragged_id` instead"]
     pub fn set_dragged_id(&mut self, id: Id) {
-        self.interaction_mut().drag_id = Some(id);
+        self.interaction_mut().potential_drag_id = Some(id);
     }
 
     /// Stop dragging any widget.
     #[inline(always)]
+    #[deprecated = "Use `Context::stop_dragging` instead"]
     pub fn stop_dragging(&mut self) {
-        self.interaction_mut().drag_id = None;
+        self.interaction_mut().potential_drag_id = None;
+    }
+
+    /// Is something else being dragged?
+    ///
+    /// Returns true if we are dragging something, but not the given widget.
+    #[inline(always)]
+    #[deprecated = "Use `Context::dragging_something_else` instead"]
+    pub fn dragging_something_else(&self, not_this: Id) -> bool {
+        let drag_id = self.interaction().potential_drag_id;
+        drag_id.is_some() && drag_id != Some(not_this)
     }
 
     /// Forget window positions, sizes etc.
@@ -753,26 +789,22 @@ impl Memory {
         self.areas().get(id.into()).map(|state| state.rect())
     }
 
-    pub(crate) fn window_interaction(&self) -> Option<WindowInteraction> {
-        self.window_interactions.get(&self.viewport_id).copied()
-    }
-
-    pub(crate) fn set_window_interaction(&mut self, wi: Option<WindowInteraction>) {
-        if let Some(wi) = wi {
-            self.window_interactions.insert(self.viewport_id, wi);
-        } else {
-            self.window_interactions.remove(&self.viewport_id);
-        }
-    }
-
-    pub(crate) fn interaction(&self) -> &Interaction {
+    pub(crate) fn interaction(&self) -> &InteractionState {
         self.interactions
             .get(&self.viewport_id)
             .expect("Failed to get interaction")
     }
 
-    pub(crate) fn interaction_mut(&mut self) -> &mut Interaction {
+    pub(crate) fn interaction_mut(&mut self) -> &mut InteractionState {
         self.interactions.entry(self.viewport_id).or_default()
+    }
+
+    pub(crate) fn focus(&self) -> Option<&Focus> {
+        self.focus.get(&self.viewport_id)
+    }
+
+    pub(crate) fn focus_mut(&mut self) -> &mut Focus {
+        self.focus.entry(self.viewport_id).or_default()
     }
 }
 
@@ -869,6 +901,15 @@ impl Areas {
         &self.order
     }
 
+    /// For each layer, which order is it in [`Self::order`]?
+    pub(crate) fn order_map(&self) -> HashMap<LayerId, usize> {
+        self.order
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (*id, i))
+            .collect()
+    }
+
     pub(crate) fn set_state(&mut self, layer_id: LayerId, state: area::State) {
         self.visible_current_frame.insert(layer_id);
         self.areas.insert(layer_id.id, state);
@@ -878,14 +919,20 @@ impl Areas {
     }
 
     /// Top-most layer at the given position.
-    pub fn layer_id_at(&self, pos: Pos2, resize_interact_radius_side: f32) -> Option<LayerId> {
+    pub fn layer_id_at(
+        &self,
+        pos: Pos2,
+        layer_transforms: &HashMap<LayerId, TSTransform>,
+    ) -> Option<LayerId> {
         for layer in self.order.iter().rev() {
             if self.is_visible(layer) {
                 if let Some(state) = self.areas.get(&layer.id) {
                     let mut rect = state.rect();
                     if state.interactable {
-                        // Allow us to resize by dragging just outside the window:
-                        rect = rect.expand(resize_interact_radius_side);
+                        if let Some(transform) = layer_transforms.get(layer) {
+                            rect = *transform * rect;
+                        }
+
                         if rect.contains(pos) {
                             return Some(*layer);
                         }
@@ -927,6 +974,14 @@ impl Areas {
         if !self.order.iter().any(|x| *x == layer_id) {
             self.order.push(layer_id);
         }
+    }
+
+    pub fn top_layer_id(&self, order: Order) -> Option<LayerId> {
+        self.order
+            .iter()
+            .filter(|layer| layer.order == order)
+            .last()
+            .copied()
     }
 
     pub(crate) fn end_frame(&mut self) {

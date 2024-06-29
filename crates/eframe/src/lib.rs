@@ -9,6 +9,21 @@
 //! In short, you implement [`App`] (especially [`App::update`]) and then
 //! call [`crate::run_native`] from your `main.rs`, and/or use `eframe::WebRunner` from your `lib.rs`.
 //!
+//! ## Compiling for web
+//! To get copy-paste working on web, you need to compile with
+//! `export RUSTFLAGS=--cfg=web_sys_unstable_apis`.
+//!
+//! You need to install the `wasm32` target with `rustup target add wasm32-unknown-unknown`.
+//!
+//! Build the `.wasm` using `cargo build --target wasm32-unknown-unknown`
+//! and then use [`wasm-bindgen`](https://github.com/rustwasm/wasm-bindgen) to generate the JavaScript glue code.
+//!
+//! See the [`eframe_template` repository](https://github.com/emilk/eframe_template/) for more.
+//!
+//! ## Simplified usage
+//! If your app is only for native, and you don't need advanced features like state persistence,
+//! then you can use the simpler function [`run_simple_native`].
+//!
 //! ## Usage, native:
 //! ``` no_run
 //! use eframe::egui;
@@ -114,12 +129,8 @@
 //! }
 //! ```
 //!
-//! ## Simplified usage
-//! If your app is only for native, and you don't need advanced features like state persistence,
-//! then you can use the simpler function [`run_simple_native`].
-//!
 //! ## Feature flags
-#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+#![doc = document_features::document_features!()]
 //!
 
 #![warn(missing_docs)] // let's keep eframe well-documented
@@ -138,6 +149,8 @@ mod epi;
 
 // Re-export everything in `epi` so `eframe` users don't have to care about what `epi` is:
 pub use epi::*;
+
+pub(crate) mod stopwatch;
 
 // ----------------------------------------------------------------------------
 // When compiling for web
@@ -280,7 +293,7 @@ pub fn run_native(
 ///                     .labelled_by(name_label.id);
 ///             });
 ///             ui.add(egui::Slider::new(&mut age, 0..=120).text("age"));
-///             if ui.button("Click each year").clicked() {
+///             if ui.button("Increment").clicked() {
 ///                 age += 1;
 ///             }
 ///             ui.label(format!("Hello '{name}', age {age}"));
@@ -324,6 +337,11 @@ pub enum Error {
     #[cfg(not(target_arch = "wasm32"))]
     #[error("winit error: {0}")]
     Winit(#[from] winit::error::OsError),
+
+    /// An error from [`winit::event_loop::EventLoop`].
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("winit EventLoopError: {0}")]
+    WinitEventLoop(#[from] winit::error::EventLoopError),
 
     /// An error from [`glutin`] when using [`glow`].
     #[cfg(all(feature = "glow", not(target_arch = "wasm32")))]

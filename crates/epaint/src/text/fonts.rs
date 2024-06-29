@@ -335,6 +335,23 @@ impl FontDefinitions {
             families,
         }
     }
+
+    /// List of all the builtin font names used by `epaint`.
+    #[cfg(feature = "default_fonts")]
+    pub fn builtin_font_names() -> &'static [&'static str] {
+        &[
+            "Ubuntu-Light",
+            "NotoEmoji-Regular",
+            "emoji-icon-font",
+            "Hack",
+        ]
+    }
+
+    /// List of all the builtin font names used by `epaint`.
+    #[cfg(not(feature = "default_fonts"))]
+    pub fn builtin_font_names() -> &'static [&'static str] {
+        &[]
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -348,6 +365,7 @@ impl FontDefinitions {
 /// If you are using `egui`, use `egui::Context::set_fonts` and `egui::Context::fonts`.
 ///
 /// You need to call [`Self::begin_frame`] and [`Self::font_image_delta`] once every frame.
+#[derive(Clone)]
 pub struct Fonts(Arc<Mutex<FontsAndCache>>);
 
 impl Fonts {
@@ -378,8 +396,7 @@ impl Fonts {
     pub fn begin_frame(&self, pixels_per_point: f32, max_texture_side: usize) {
         let mut fonts_and_cache = self.0.lock();
 
-        let pixels_per_point_changed =
-            (fonts_and_cache.fonts.pixels_per_point - pixels_per_point).abs() > 1e-3;
+        let pixels_per_point_changed = fonts_and_cache.fonts.pixels_per_point != pixels_per_point;
         let max_texture_side_changed = fonts_and_cache.fonts.max_texture_side != max_texture_side;
         let font_atlas_almost_full = fonts_and_cache.fonts.atlas.lock().fill_ratio() > 0.8;
         let needs_recreate =
@@ -531,12 +548,7 @@ impl Fonts {
         font_id: FontId,
         wrap_width: f32,
     ) -> Arc<Galley> {
-        self.layout_job(LayoutJob::simple(
-            text,
-            font_id,
-            crate::Color32::TEMPORARY_COLOR,
-            wrap_width,
-        ))
+        self.layout(text, font_id, crate::Color32::PLACEHOLDER, wrap_width)
     }
 }
 

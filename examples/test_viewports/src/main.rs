@@ -34,7 +34,7 @@ pub struct ViewportState {
 impl ViewportState {
     pub fn new_deferred(
         title: &'static str,
-        children: Vec<Arc<RwLock<ViewportState>>>,
+        children: Vec<Arc<RwLock<Self>>>,
     ) -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self {
             id: ViewportId::from_hash_of(title),
@@ -47,7 +47,7 @@ impl ViewportState {
 
     pub fn new_immediate(
         title: &'static str,
-        children: Vec<Arc<RwLock<ViewportState>>>,
+        children: Vec<Arc<RwLock<Self>>>,
     ) -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self {
             id: ViewportId::from_hash_of(title),
@@ -58,7 +58,7 @@ impl ViewportState {
         }))
     }
 
-    pub fn show(vp_state: Arc<RwLock<ViewportState>>, ctx: &egui::Context) {
+    pub fn show(vp_state: Arc<RwLock<Self>>, ctx: &egui::Context) {
         if !vp_state.read().visible {
             return;
         }
@@ -192,8 +192,11 @@ fn generic_child_ui(ui: &mut egui::Ui, vp_state: &mut ViewportState) {
     ui.horizontal(|ui| {
         ui.label("Title:");
         if ui.text_edit_singleline(&mut vp_state.title).changed() {
-            // Title changes happen at the parent level:
-            ui.ctx().request_repaint_of(ui.ctx().parent_viewport_id());
+            // Title changes
+            ui.ctx().send_viewport_cmd_to(
+                vp_state.id,
+                egui::ViewportCommand::Title(vp_state.title.clone()),
+            );
         }
     });
 
@@ -386,7 +389,7 @@ fn drag_and_drop_test(ui: &mut egui::Ui) {
                 for (id, value) in data.read().cols(container_id, col) {
                     drag_source(ui, id, |ui| {
                         ui.add(egui::Label::new(value).sense(egui::Sense::click()));
-                        if ui.memory(|mem| mem.is_being_dragged(id)) {
+                        if ui.ctx().is_being_dragged(id) {
                             is_dragged = Some(id);
                         }
                     });
@@ -408,7 +411,7 @@ fn drag_source<R>(
     id: egui::Id,
     body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> InnerResponse<R> {
-    let is_being_dragged = ui.memory(|mem| mem.is_being_dragged(id));
+    let is_being_dragged = ui.ctx().is_being_dragged(id);
 
     if !is_being_dragged {
         let res = ui.scope(body);
@@ -428,19 +431,22 @@ fn drag_source<R>(
 
         if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
             let delta = pointer_pos - res.response.rect.center();
-            ui.ctx().translate_layer(layer_id, delta);
+            ui.ctx().set_transform_layer(
+                layer_id,
+                eframe::emath::TSTransform::from_translation(delta),
+            );
         }
 
         res
     }
 }
 
-// This is taken from crates/egui_demo_lib/src/debo/drag_and_drop.rs
+// TODO(emilk): Update to be more like `crates/egui_demo_lib/src/debo/drag_and_drop.rs`
 fn drop_target<R>(
     ui: &mut egui::Ui,
     body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
-    let is_being_dragged = ui.memory(|mem| mem.is_anything_being_dragged());
+    let is_being_dragged = ui.ctx().dragged_id().is_some();
 
     let margin = egui::Vec2::splat(ui.visuals().clip_rect_margin); // 3.0
 

@@ -5,6 +5,50 @@ This file is updated upon each release.
 Changes since the last release can be found at <https://github.com/emilk/egui/compare/latest...HEAD> or by running the `scripts/generate_changelog.py` script.
 
 
+## 0.27.2 - 2024-04-02
+* Nothing new
+
+
+## 0.27.1 - 2024-03-29
+* Nothing new
+
+
+## 0.27.0 - 2024-03-26
+* Add scroll bar visibility option to `Table` widget [#3981](https://github.com/emilk/egui/pull/3981) (thanks [@richardhozak](https://github.com/richardhozak)!)
+* Update `ehttp` to 0.5 [#4055](https://github.com/emilk/egui/pull/4055)
+* Fix: assign a different id to each table cell, avoiding id clashes [#4076](https://github.com/emilk/egui/pull/4076)
+* Fix interaction with widgets inside selectable rows of `Table` [#4077](https://github.com/emilk/egui/pull/4077)
+* Fixed handling of `file://` protocol for images [#4107](https://github.com/emilk/egui/pull/4107) (thanks [@varphone](https://github.com/varphone)!)
+* Option to change date picker format [#4180](https://github.com/emilk/egui/pull/4180) (thanks [@zaaarf](https://github.com/zaaarf)!)
+* Added ability to disable highlighting of weekend days in `DatePickerPopup`. [#4151](https://github.com/emilk/egui/pull/4151) (thanks [@hiyosilver](https://github.com/hiyosilver)!)
+
+
+## 0.26.2 - 2024-02-14
+* Nothing new
+
+
+## 0.26.1 - 2024-02-11
+* Nothing new
+
+
+## 0.26.0 - 2024-02-05
+* Remove `unwrap`s in SVG scaling [#3826](https://github.com/emilk/egui/pull/3826) (thanks [@amPerl](https://github.com/amPerl)!)
+* Update to ehttp 0.4 [#3834](https://github.com/emilk/egui/pull/3834)
+* Fix `StripBuilder` not allocating its used space [#3957](https://github.com/emilk/egui/pull/3957) (thanks [@IVAN-MK7](https://github.com/IVAN-MK7)!)
+* Override text color with stroke selection color for selected cells [#3968](https://github.com/emilk/egui/pull/3968) (thanks [@njust](https://github.com/njust)!)
+
+
+## 0.25.0 - 2024-01-08
+* Implement table row selection and hover highlighting [#3347](https://github.com/emilk/egui/pull/3347) (thanks [@laurooyen](https://github.com/laurooyen)!)
+* Fix `egui_extras::Table` scrolling bug [#3690](https://github.com/emilk/egui/pull/3690) (thanks [@abey79](https://github.com/abey79)!)
+* Fix crash due to assertion during image loading from http [#3750](https://github.com/emilk/egui/pull/3750)
+* Update resvg dependency of egui_extras [#3719](https://github.com/emilk/egui/pull/3719) (thanks [@PingPongun](https://github.com/PingPongun)!)
+
+
+## 0.24.2 - 2023-12-08 - `Table` scroll bug fix
+* Fix `Table` scrolling bug [#3690](https://github.com/emilk/egui/pull/3690)
+
+
 ## 0.24.1 - 2023-11-30
 * Add more years for datepicker [#3599](https://github.com/emilk/egui/pull/3599) (thanks [@vaqxai](https://github.com/vaqxai)!)
 

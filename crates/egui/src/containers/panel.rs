@@ -51,22 +51,22 @@ pub enum Side {
 impl Side {
     fn opposite(self) -> Self {
         match self {
-            Side::Left => Self::Right,
-            Side::Right => Self::Left,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
         }
     }
 
     fn set_rect_width(self, rect: &mut Rect, width: f32) {
         match self {
-            Side::Left => rect.max.x = rect.min.x + width,
-            Side::Right => rect.min.x = rect.max.x - width,
+            Self::Left => rect.max.x = rect.min.x + width,
+            Self::Right => rect.min.x = rect.max.x - width,
         }
     }
 
     fn side_x(self, rect: Rect) -> f32 {
         match self {
-            Side::Left => rect.left(),
-            Side::Right => rect.right(),
+            Self::Left => rect.left(),
+            Self::Right => rect.right(),
         }
     }
 }
@@ -238,40 +238,22 @@ impl SidePanel {
             ui.ctx().check_for_id_clash(id, panel_rect, "SidePanel");
         }
 
+        let resize_id = id.with("__resize");
         let mut resize_hover = false;
         let mut is_resizing = false;
         if resizable {
-            let resize_id = id.with("__resize");
-            if let Some(pointer) = ui.ctx().pointer_latest_pos() {
-                let we_are_on_top = ui
-                    .ctx()
-                    .layer_id_at(pointer)
-                    .map_or(true, |top_layer_id| top_layer_id == ui.layer_id());
+            // First we read the resize interaction results, to avoid frame latency in the resize:
+            if let Some(resize_response) = ui.ctx().read_response(resize_id) {
+                resize_hover = resize_response.hovered();
+                is_resizing = resize_response.dragged();
 
-                let resize_x = side.opposite().side_x(panel_rect);
-                let mouse_over_resize_line = we_are_on_top
-                    && panel_rect.y_range().contains(pointer.y)
-                    && (resize_x - pointer.x).abs()
-                        <= ui.style().interaction.resize_grab_radius_side;
-
-                if ui.input(|i| i.pointer.any_pressed() && i.pointer.any_down())
-                    && mouse_over_resize_line
-                {
-                    ui.memory_mut(|mem| mem.set_dragged_id(resize_id));
-                }
-                is_resizing = ui.memory(|mem| mem.is_being_dragged(resize_id));
                 if is_resizing {
-                    let width = (pointer.x - side.side_x(panel_rect)).abs();
-                    let width = clamp_to_range(width, width_range).at_most(available_rect.width());
-                    side.set_rect_width(&mut panel_rect, width);
-                }
-
-                let dragging_something_else =
-                    ui.input(|i| i.pointer.any_down() || i.pointer.any_pressed());
-                resize_hover = mouse_over_resize_line && !dragging_something_else;
-
-                if resize_hover || is_resizing {
-                    ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+                    if let Some(pointer) = resize_response.interact_pointer_pos() {
+                        let width = (pointer.x - side.side_x(panel_rect)).abs();
+                        let width =
+                            clamp_to_range(width, width_range).at_most(available_rect.width());
+                        side.set_rect_width(&mut panel_rect, width);
+                    }
                 }
             }
         }
@@ -300,6 +282,22 @@ impl SidePanel {
             ui.set_cursor(cursor);
         }
         ui.expand_to_include_rect(rect);
+
+        if resizable {
+            // Now we do the actual resize interaction, on top of all the contents.
+            // Otherwise its input could be eaten by the contents, e.g. a
+            // `ScrollArea` on either side of the panel boundary.
+            let resize_x = side.opposite().side_x(panel_rect);
+            let resize_rect = Rect::from_x_y_ranges(resize_x..=resize_x, panel_rect.y_range())
+                .expand2(vec2(ui.style().interaction.resize_grab_radius_side, 0.0));
+            let resize_response = ui.interact(resize_rect, resize_id, Sense::drag());
+            resize_hover = resize_response.hovered();
+            is_resizing = resize_response.dragged();
+        }
+
+        if resize_hover || is_resizing {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+        }
 
         PanelState { rect }.store(ui.ctx(), id);
 
@@ -506,22 +504,22 @@ pub enum TopBottomSide {
 impl TopBottomSide {
     fn opposite(self) -> Self {
         match self {
-            TopBottomSide::Top => Self::Bottom,
-            TopBottomSide::Bottom => Self::Top,
+            Self::Top => Self::Bottom,
+            Self::Bottom => Self::Top,
         }
     }
 
     fn set_rect_height(self, rect: &mut Rect, height: f32) {
         match self {
-            TopBottomSide::Top => rect.max.y = rect.min.y + height,
-            TopBottomSide::Bottom => rect.min.y = rect.max.y - height,
+            Self::Top => rect.max.y = rect.min.y + height,
+            Self::Bottom => rect.min.y = rect.max.y - height,
         }
     }
 
     fn side_y(self, rect: Rect) -> f32 {
         match self {
-            TopBottomSide::Top => rect.top(),
-            TopBottomSide::Bottom => rect.bottom(),
+            Self::Top => rect.top(),
+            Self::Bottom => rect.bottom(),
         }
     }
 }
@@ -698,42 +696,22 @@ impl TopBottomPanel {
                 .check_for_id_clash(id, panel_rect, "TopBottomPanel");
         }
 
+        let resize_id = id.with("__resize");
         let mut resize_hover = false;
         let mut is_resizing = false;
         if resizable {
-            let resize_id = id.with("__resize");
-            let latest_pos = ui.input(|i| i.pointer.latest_pos());
-            if let Some(pointer) = latest_pos {
-                let we_are_on_top = ui
-                    .ctx()
-                    .layer_id_at(pointer)
-                    .map_or(true, |top_layer_id| top_layer_id == ui.layer_id());
+            // First we read the resize interaction results, to avoid frame latency in the resize:
+            if let Some(resize_response) = ui.ctx().read_response(resize_id) {
+                resize_hover = resize_response.hovered();
+                is_resizing = resize_response.dragged();
 
-                let resize_y = side.opposite().side_y(panel_rect);
-                let mouse_over_resize_line = we_are_on_top
-                    && panel_rect.x_range().contains(pointer.x)
-                    && (resize_y - pointer.y).abs()
-                        <= ui.style().interaction.resize_grab_radius_side;
-
-                if ui.input(|i| i.pointer.any_pressed() && i.pointer.any_down())
-                    && mouse_over_resize_line
-                {
-                    ui.memory_mut(|mem| mem.interaction_mut().drag_id = Some(resize_id));
-                }
-                is_resizing = ui.memory(|mem| mem.interaction().drag_id == Some(resize_id));
                 if is_resizing {
-                    let height = (pointer.y - side.side_y(panel_rect)).abs();
-                    let height =
-                        clamp_to_range(height, height_range).at_most(available_rect.height());
-                    side.set_rect_height(&mut panel_rect, height);
-                }
-
-                let dragging_something_else =
-                    ui.input(|i| i.pointer.any_down() || i.pointer.any_pressed());
-                resize_hover = mouse_over_resize_line && !dragging_something_else;
-
-                if resize_hover || is_resizing {
-                    ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
+                    if let Some(pointer) = resize_response.interact_pointer_pos() {
+                        let height = (pointer.y - side.side_y(panel_rect)).abs();
+                        let height =
+                            clamp_to_range(height, height_range).at_most(available_rect.height());
+                        side.set_rect_height(&mut panel_rect, height);
+                    }
                 }
             }
         }
@@ -762,6 +740,23 @@ impl TopBottomPanel {
             ui.set_cursor(cursor);
         }
         ui.expand_to_include_rect(rect);
+
+        if resizable {
+            // Now we do the actual resize interaction, on top of all the contents.
+            // Otherwise its input could be eaten by the contents, e.g. a
+            // `ScrollArea` on either side of the panel boundary.
+
+            let resize_y = side.opposite().side_y(panel_rect);
+            let resize_rect = Rect::from_x_y_ranges(panel_rect.x_range(), resize_y..=resize_y)
+                .expand2(vec2(0.0, ui.style().interaction.resize_grab_radius_side));
+            let resize_response = ui.interact(resize_rect, resize_id, Sense::drag());
+            resize_hover = resize_response.hovered();
+            is_resizing = resize_response.dragged();
+        }
+
+        if resize_hover || is_resizing {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
+        }
 
         PanelState { rect }.store(ui.ctx(), id);
 

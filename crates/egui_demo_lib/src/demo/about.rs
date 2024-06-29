@@ -13,6 +13,7 @@ impl super::Demo for About {
             .default_width(320.0)
             .default_height(480.0)
             .open(open)
+            .resizable([true, false])
             .show(ctx, |ui| {
                 use super::View as _;
                 self.ui(ui);
@@ -49,7 +50,13 @@ impl super::View for About {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.label("egui development is sponsored by ");
             ui.hyperlink_to("Rerun.io", "https://www.rerun.io/");
-            ui.label(", a startup building an SDK for visualizing streams of multimodal data");
+            ui.label(", a startup building an SDK for visualizing streams of multimodal data.");
+        });
+
+        ui.add_space(12.0);
+
+        ui.vertical_centered(|ui| {
+            ui.add(crate::egui_github_link_file!());
         });
     }
 }

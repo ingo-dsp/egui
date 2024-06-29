@@ -19,19 +19,43 @@ impl Vec2b {
     pub fn any(&self) -> bool {
         self.x || self.y
     }
+
+    /// Are both `x` and `y` true?
+    #[inline]
+    pub fn all(&self) -> bool {
+        self.x && self.y
+    }
+
+    #[inline]
+    pub fn and(&self, other: impl Into<Self>) -> Self {
+        let other = other.into();
+        Self {
+            x: self.x && other.x,
+            y: self.y && other.y,
+        }
+    }
+
+    #[inline]
+    pub fn or(&self, other: impl Into<Self>) -> Self {
+        let other = other.into();
+        Self {
+            x: self.x || other.x,
+            y: self.y || other.y,
+        }
+    }
 }
 
 impl From<bool> for Vec2b {
     #[inline]
     fn from(val: bool) -> Self {
-        Vec2b { x: val, y: val }
+        Self { x: val, y: val }
     }
 }
 
 impl From<[bool; 2]> for Vec2b {
     #[inline]
     fn from([x, y]: [bool; 2]) -> Self {
-        Vec2b { x, y }
+        Self { x, y }
     }
 }
 

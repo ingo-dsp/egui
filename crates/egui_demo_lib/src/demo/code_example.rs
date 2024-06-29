@@ -37,7 +37,7 @@ impl CodeExample {
 
         show_code(
             ui,
-            r#"egui::Slider::new(&mut self.age, 0..=120).text("age")"#,
+            r#"ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));"#,
         );
         ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
         ui.end_row();
@@ -45,11 +45,11 @@ impl CodeExample {
         show_code(
             ui,
             r#"
-            if ui.button("Click each year").clicked() {
+            if ui.button("Increment").clicked() {
                 self.age += 1;
             }"#,
         );
-        if ui.button("Click each year").clicked() {
+        if ui.button("Increment").clicked() {
             self.age += 1;
         }
         ui.end_row();
@@ -75,6 +75,7 @@ impl super::Demo for CodeExample {
             .default_size([800.0, 400.0])
             .vscroll(false)
             .hscroll(true)
+            .resizable([true, false])
             .show(ctx, |ui| self.ui(ui));
     }
 }

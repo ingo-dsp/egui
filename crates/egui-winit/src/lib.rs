@@ -22,7 +22,7 @@ mod window_settings;
 
 pub use window_settings::WindowSettings;
 
-use raw_window_handle::HasRawDisplayHandle;
+use raw_window_handle::HasDisplayHandle;
 
 #[allow(unused_imports)]
 pub(crate) use profiling_scopes::*;
@@ -69,15 +69,15 @@ pub struct EventResponse {
 ///
 /// Instantiate one of these per viewport/window.
 pub struct State {
+    /// Shared clone.
+    egui_ctx: egui::Context,
+
     viewport_id: ViewportId,
     start_time: web_time::Instant,
     egui_input: egui::RawInput,
     pointer_pos_in_points: Option<egui::Pos2>,
     any_pointer_button_down: bool,
     current_cursor_icon: Option<egui::CursorIcon>,
-
-    /// What egui uses.
-    current_pixels_per_point: f32, // TODO: remove - calculate with [`pixels_per_point`] instead
 
     clipboard: clipboard::Clipboard,
 
@@ -99,13 +99,15 @@ pub struct State {
     accesskit: Option<accesskit_winit::Adapter>,
 
     allow_ime: bool,
+    ime_rect_px: Option<egui::Rect>,
 }
 
 impl State {
     /// Construct a new instance
     pub fn new(
+        egui_ctx: egui::Context,
         viewport_id: ViewportId,
-        display_target: &dyn HasRawDisplayHandle,
+        display_target: &dyn HasDisplayHandle,
         native_pixels_per_point: Option<f32>,
         max_texture_side: Option<usize>,
     ) -> Self {
@@ -117,15 +119,17 @@ impl State {
         };
 
         let mut slf = Self {
+            egui_ctx,
             viewport_id,
             start_time: web_time::Instant::now(),
             egui_input,
             pointer_pos_in_points: None,
             any_pointer_button_down: false,
             current_cursor_icon: None,
-            current_pixels_per_point: native_pixels_per_point.unwrap_or(1.0),
 
-            clipboard: clipboard::Clipboard::new(display_target),
+            clipboard: clipboard::Clipboard::new(
+                display_target.display_handle().ok().map(|h| h.as_raw()),
+            ),
 
             simulate_touch_screen: false,
             pointer_touch_id: None,
@@ -136,6 +140,7 @@ impl State {
             accesskit: None,
 
             allow_ime: false,
+            ime_rect_px: None,
         };
 
         slf.egui_input
@@ -171,10 +176,29 @@ impl State {
         self.egui_input.max_texture_side = Some(max_texture_side);
     }
 
+    /// Fetches text from the clipboard and returns it.
+    pub fn clipboard_text(&mut self) -> Option<String> {
+        self.clipboard.get()
+    }
+
+    /// Places the text onto the clipboard.
+    pub fn set_clipboard_text(&mut self, text: String) {
+        self.clipboard.set(text);
+    }
+
+    /// Returns [`false`] or the last value that [`Window::set_ime_allowed()`] was called with, used for debouncing.
+    pub fn allow_ime(&self) -> bool {
+        self.allow_ime
+    }
+
+    /// Set the last value that [`Window::set_ime_allowed()`] was called with.
+    pub fn set_allow_ime(&mut self, allow: bool) {
+        self.allow_ime = allow;
+    }
+
     #[inline]
-    #[deprecated = "Use egui_winit::pixels_per_point instead"]
-    pub fn pixels_per_point(&self) -> f32 {
-        self.current_pixels_per_point
+    pub fn egui_ctx(&self) -> &egui::Context {
+        &self.egui_ctx
     }
 
     /// The current input state.
@@ -191,18 +215,12 @@ impl State {
         &mut self.egui_input
     }
 
-    /// Update the given viewport info with the current state of the window.
-    #[deprecated = "Use egui_winit::update_viewport_info instead"]
-    pub fn update_viewport_info(&self, info: &mut ViewportInfo, window: &Window) {
-        update_viewport_info_impl(info, window, self.current_pixels_per_point);
-    }
-
     /// Prepare for a new frame by extracting the accumulated input,
     ///
     /// as well as setting [the time](egui::RawInput::time) and [screen rectangle](egui::RawInput::screen_rect).
     ///
     /// You need to set [`egui::RawInput::viewports`] yourself though.
-    /// Use [`Self::update_viewport_info`] to update the info for each
+    /// Use [`update_viewport_info`] to update the info for each
     /// viewport.
     pub fn take_egui_input(&mut self, window: &Window) -> egui::RawInput {
         crate::profile_function!();
@@ -213,7 +231,8 @@ impl State {
         // See: https://github.com/rust-windowing/winit/issues/208
         // This solves an issue where egui window positions would be changed when minimizing on Windows.
         let screen_size_in_pixels = screen_size_in_pixels(window);
-        let screen_size_in_points = screen_size_in_pixels / self.current_pixels_per_point;
+        let screen_size_in_points =
+            screen_size_in_pixels / pixels_per_point(&self.egui_ctx, window);
 
         self.egui_input.screen_rect = (screen_size_in_points.x > 0.0
             && screen_size_in_points.y > 0.0)
@@ -231,21 +250,20 @@ impl State {
         self.egui_input.take()
     }
 
-    // TODO(emilk): remove asap.
-    #[doc(hidden)]
-    pub fn update_pixels_per_point(&mut self, egui_ctx: &egui::Context, window: &Window) {
-        self.current_pixels_per_point = pixels_per_point(egui_ctx, window);
-    }
-
     /// Call this when there is a new event.
     ///
     /// The result can be found in [`Self::egui_input`] and be extracted with [`Self::take_egui_input`].
     pub fn on_window_event(
         &mut self,
-        egui_ctx: &egui::Context,
-        event: &winit::event::WindowEvent<'_>,
+        window: &Window,
+        event: &winit::event::WindowEvent,
     ) -> EventResponse {
         crate::profile_function!(short_window_event_description(event));
+
+        #[cfg(feature = "accesskit")]
+        if let Some(accesskit) = &self.accesskit {
+            accesskit.process_event(window, event);
+        }
 
         use winit::event::WindowEvent;
         match event {
@@ -257,7 +275,7 @@ impl State {
                     .entry(self.viewport_id)
                     .or_default()
                     .native_pixels_per_point = Some(native_pixels_per_point);
-                self.current_pixels_per_point = egui_ctx.zoom_factor() * native_pixels_per_point;
+
                 EventResponse {
                     repaint: true,
                     consumed: false,
@@ -267,21 +285,21 @@ impl State {
                 self.on_mouse_button_input(*state, *button);
                 EventResponse {
                     repaint: true,
-                    consumed: egui_ctx.wants_pointer_input(),
+                    consumed: self.egui_ctx.wants_pointer_input(),
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                self.on_mouse_wheel(*delta);
+                self.on_mouse_wheel(window, *delta);
                 EventResponse {
                     repaint: true,
-                    consumed: egui_ctx.wants_pointer_input(),
+                    consumed: self.egui_ctx.wants_pointer_input(),
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.on_cursor_moved(*position);
+                self.on_cursor_moved(window, *position);
                 EventResponse {
                     repaint: true,
-                    consumed: egui_ctx.is_using_pointer(),
+                    consumed: self.egui_ctx.is_using_pointer(),
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -292,39 +310,21 @@ impl State {
                     consumed: false,
                 }
             }
-            // WindowEvent::TouchpadPressure {device_id, pressure, stage, ..  } => {} // TODO
+            // WindowEvent::TouchpadPressure {device_id, pressure, stage, ..  } => {} // TODO(emilk)
             WindowEvent::Touch(touch) => {
-                self.on_touch(touch);
+                self.on_touch(window, touch);
                 let consumed = match touch.phase {
                     winit::event::TouchPhase::Started
                     | winit::event::TouchPhase::Ended
-                    | winit::event::TouchPhase::Cancelled => egui_ctx.wants_pointer_input(),
-                    winit::event::TouchPhase::Moved => egui_ctx.is_using_pointer(),
+                    | winit::event::TouchPhase::Cancelled => self.egui_ctx.wants_pointer_input(),
+                    winit::event::TouchPhase::Moved => self.egui_ctx.is_using_pointer(),
                 };
                 EventResponse {
                     repaint: true,
                     consumed,
                 }
             }
-            WindowEvent::ReceivedCharacter(ch) => {
-                // On Mac we get here when the user presses Cmd-C (copy), ctrl-W, etc.
-                // We need to ignore these characters that are side-effects of commands.
-                let is_mac_cmd = cfg!(target_os = "macos")
-                    && (self.egui_input.modifiers.ctrl || self.egui_input.modifiers.mac_cmd);
 
-                let consumed = if is_printable_char(*ch) && !is_mac_cmd {
-                    self.egui_input
-                        .events
-                        .push(egui::Event::Text(ch.to_string()));
-                    egui_ctx.wants_keyboard_input()
-                } else {
-                    false
-                };
-                EventResponse {
-                    repaint: true,
-                    consumed,
-                }
-            }
             WindowEvent::Ime(ime) => {
                 // on Mac even Cmd-C is pressed during ime, a `c` is pushed to Preedit.
                 // So no need to check is_mac_cmd.
@@ -361,14 +361,16 @@ impl State {
 
                 EventResponse {
                     repaint: true,
-                    consumed: egui_ctx.wants_keyboard_input(),
+                    consumed: self.egui_ctx.wants_keyboard_input(),
                 }
             }
-            WindowEvent::KeyboardInput { input, .. } => {
-                self.on_keyboard_input(input);
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.on_keyboard_input(event);
+
                 // When pressing the Tab key, egui focuses the first focusable element, hence Tab always consumes.
-                let consumed = egui_ctx.wants_keyboard_input()
-                    || input.virtual_keycode == Some(winit::event::VirtualKeyCode::Tab);
+                let consumed = self.egui_ctx.wants_keyboard_input()
+                    || event.logical_key
+                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab);
                 EventResponse {
                     repaint: true,
                     consumed,
@@ -376,9 +378,6 @@ impl State {
             }
             WindowEvent::Focused(focused) => {
                 self.egui_input.focused = *focused;
-                // We will not be given a KeyboardInput event when the modifiers are released while
-                // the window does not have focus. Unset all modifier state to be safe.
-                self.egui_input.modifiers = egui::Modifiers::default();
                 self.egui_input
                     .events
                     .push(egui::Event::WindowFocused(*focused));
@@ -416,15 +415,23 @@ impl State {
                 }
             }
             WindowEvent::ModifiersChanged(state) => {
-                self.egui_input.modifiers.alt = state.alt();
-                self.egui_input.modifiers.ctrl = state.ctrl();
-                self.egui_input.modifiers.shift = state.shift();
-                self.egui_input.modifiers.mac_cmd = cfg!(target_os = "macos") && state.logo();
+                let state = state.state();
+
+                let alt = state.alt_key();
+                let ctrl = state.control_key();
+                let shift = state.shift_key();
+                let super_ = state.super_key();
+
+                self.egui_input.modifiers.alt = alt;
+                self.egui_input.modifiers.ctrl = ctrl;
+                self.egui_input.modifiers.shift = shift;
+                self.egui_input.modifiers.mac_cmd = cfg!(target_os = "macos") && super_;
                 self.egui_input.modifiers.command = if cfg!(target_os = "macos") {
-                    state.logo()
+                    super_
                 } else {
-                    state.ctrl()
+                    ctrl
                 };
+
                 EventResponse {
                     repaint: true,
                     consumed: false,
@@ -432,7 +439,8 @@ impl State {
             }
 
             // Things that may require repaint:
-            WindowEvent::CursorEntered { .. }
+            WindowEvent::RedrawRequested
+            | WindowEvent::CursorEntered { .. }
             | WindowEvent::Destroyed
             | WindowEvent::Occluded(_)
             | WindowEvent::Resized(_)
@@ -445,7 +453,8 @@ impl State {
             },
 
             // Things we completely ignore:
-            WindowEvent::AxisMotion { .. }
+            WindowEvent::ActivationTokenDone { .. }
+            | WindowEvent::AxisMotion { .. }
             | WindowEvent::SmartMagnify { .. }
             | WindowEvent::TouchpadRotate { .. } => EventResponse {
                 repaint: false,
@@ -459,10 +468,17 @@ impl State {
                 self.egui_input.events.push(egui::Event::Zoom(zoom_factor));
                 EventResponse {
                     repaint: true,
-                    consumed: egui_ctx.wants_pointer_input(),
+                    consumed: self.egui_ctx.wants_pointer_input(),
                 }
             }
         }
+    }
+
+    pub fn on_mouse_motion(&mut self, delta: (f64, f64)) {
+        self.egui_input.events.push(egui::Event::MouseMoved(Vec2 {
+            x: delta.0 as f32,
+            y: delta.1 as f32,
+        }));
     }
 
     /// Call this when there is a new [`accesskit::ActionRequest`].
@@ -520,10 +536,16 @@ impl State {
         }
     }
 
-    fn on_cursor_moved(&mut self, pos_in_pixels: winit::dpi::PhysicalPosition<f64>) {
+    fn on_cursor_moved(
+        &mut self,
+        window: &Window,
+        pos_in_pixels: winit::dpi::PhysicalPosition<f64>,
+    ) {
+        let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+
         let pos_in_points = egui::pos2(
-            pos_in_pixels.x as f32 / self.current_pixels_per_point,
-            pos_in_pixels.y as f32 / self.current_pixels_per_point,
+            pos_in_pixels.x as f32 / pixels_per_point,
+            pos_in_pixels.y as f32 / pixels_per_point,
         );
         self.pointer_pos_in_points = Some(pos_in_points);
 
@@ -548,7 +570,9 @@ impl State {
         }
     }
 
-    fn on_touch(&mut self, touch: &winit::event::Touch) {
+    fn on_touch(&mut self, window: &Window, touch: &winit::event::Touch) {
+        let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+
         // Emit touch event
         self.egui_input.events.push(egui::Event::Touch {
             device_id: egui::TouchDeviceId(egui::epaint::util::hash(touch.device_id)),
@@ -560,8 +584,8 @@ impl State {
                 winit::event::TouchPhase::Cancelled => egui::TouchPhase::Cancel,
             },
             pos: egui::pos2(
-                touch.location.x as f32 / self.current_pixels_per_point,
-                touch.location.y as f32 / self.current_pixels_per_point,
+                touch.location.x as f32 / pixels_per_point,
+                touch.location.y as f32 / pixels_per_point,
             ),
             force: match touch.force {
                 Some(winit::event::Force::Normalized(force)) => Some(force as f32),
@@ -581,14 +605,14 @@ impl State {
                 winit::event::TouchPhase::Started => {
                     self.pointer_touch_id = Some(touch.id);
                     // First move the pointer to the right location
-                    self.on_cursor_moved(touch.location);
+                    self.on_cursor_moved(window, touch.location);
                     self.on_mouse_button_input(
                         winit::event::ElementState::Pressed,
                         winit::event::MouseButton::Left,
                     );
                 }
                 winit::event::TouchPhase::Moved => {
-                    self.on_cursor_moved(touch.location);
+                    self.on_cursor_moved(window, touch.location);
                 }
                 winit::event::TouchPhase::Ended => {
                     self.pointer_touch_id = None;
@@ -610,7 +634,9 @@ impl State {
         }
     }
 
-    fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
+    fn on_mouse_wheel(&mut self, window: &Window, delta: winit::event::MouseScrollDelta) {
+        let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+
         {
             let (unit, delta) = match delta {
                 winit::event::MouseScrollDelta::LineDelta(x, y) => {
@@ -621,7 +647,7 @@ impl State {
                     y,
                 }) => (
                     egui::MouseWheelUnit::Point,
-                    egui::vec2(x as f32, y as f32) / self.current_pixels_per_point,
+                    egui::vec2(x as f32, y as f32) / pixels_per_point,
                 ),
             };
             let modifiers = self.egui_input.modifiers;
@@ -637,7 +663,7 @@ impl State {
                 egui::vec2(x, y) * points_per_scroll_line
             }
             winit::event::MouseScrollDelta::PixelDelta(delta) => {
-                egui::vec2(delta.x as f32, delta.y as f32) / self.current_pixels_per_point
+                egui::vec2(delta.x as f32, delta.y as f32) / pixels_per_point
             }
         };
 
@@ -656,34 +682,95 @@ impl State {
         }
     }
 
-    fn on_keyboard_input(&mut self, input: &winit::event::KeyboardInput) {
-        if let Some(keycode) = input.virtual_keycode {
-            let pressed = input.state == winit::event::ElementState::Pressed;
+    fn on_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        let winit::event::KeyEvent {
+            // Represents the position of a key independent of the currently active layout.
+            //
+            // It also uniquely identifies the physical key (i.e. it's mostly synonymous with a scancode).
+            // The most prevalent use case for this is games. For example the default keys for the player
+            // to move around might be the W, A, S, and D keys on a US layout. The position of these keys
+            // is more important than their label, so they should map to Z, Q, S, and D on an "AZERTY"
+            // layout. (This value is `KeyCode::KeyW` for the Z key on an AZERTY layout.)
+            physical_key,
 
+            // Represents the results of a keymap, i.e. what character a certain key press represents.
+            // When telling users "Press Ctrl-F to find", this is where we should
+            // look for the "F" key, because they may have a dvorak layout on
+            // a qwerty keyboard, and so the logical "F" character may not be located on the physical `KeyCode::KeyF` position.
+            logical_key,
+
+            text,
+
+            state,
+
+            location: _, // e.g. is it on the numpad?
+            repeat: _,   // egui will figure this out for us
+            ..
+        } = event;
+
+        let pressed = *state == winit::event::ElementState::Pressed;
+
+        let physical_key = if let winit::keyboard::PhysicalKey::Code(keycode) = *physical_key {
+            key_from_key_code(keycode)
+        } else {
+            None
+        };
+
+        let logical_key = key_from_winit_key(logical_key);
+
+        // Helpful logging to enable when adding new key support
+        log::trace!(
+            "logical {:?} -> {:?},  physical {:?} -> {:?}",
+            event.logical_key,
+            logical_key,
+            event.physical_key,
+            physical_key
+        );
+
+        if let Some(logical_key) = logical_key {
             if pressed {
-                // VirtualKeyCode::Paste etc in winit are broken/untrustworthy,
-                // so we detect these things manually:
-                if is_cut_command(self.egui_input.modifiers, keycode) {
+                if is_cut_command(self.egui_input.modifiers, logical_key) {
                     self.egui_input.events.push(egui::Event::Cut);
-                } else if is_copy_command(self.egui_input.modifiers, keycode) {
+                    return;
+                } else if is_copy_command(self.egui_input.modifiers, logical_key) {
                     self.egui_input.events.push(egui::Event::Copy);
-                } else if is_paste_command(self.egui_input.modifiers, keycode) {
+                    return;
+                } else if is_paste_command(self.egui_input.modifiers, logical_key) {
                     if let Some(contents) = self.clipboard.get() {
                         let contents = contents.replace("\r\n", "\n");
                         if !contents.is_empty() {
                             self.egui_input.events.push(egui::Event::Paste(contents));
                         }
                     }
+                    return;
                 }
             }
 
-            if let Some(key) = translate_virtual_key_code(keycode) {
-                self.egui_input.events.push(egui::Event::Key {
-                    key,
-                    pressed,
-                    repeat: false, // egui will fill this in for us!
-                    modifiers: self.egui_input.modifiers,
-                });
+            self.egui_input.events.push(egui::Event::Key {
+                key: logical_key,
+                physical_key,
+                pressed,
+                repeat: false, // egui will fill this in for us!
+                modifiers: self.egui_input.modifiers,
+            });
+        }
+
+        if let Some(text) = &text {
+            // Make sure there is text, and that it is not control characters
+            // (e.g. delete is sent as "\u{f728}" on macOS).
+            if !text.is_empty() && text.chars().all(is_printable_char) {
+                // On some platforms we get here when the user presses Cmd-C (copy), ctrl-W, etc.
+                // We need to ignore these characters that are side-effects of commands.
+                // Also make sure the key is pressed (not released). On Linux, text might
+                // contain some data even when the key is released.
+                let is_cmd = self.egui_input.modifiers.ctrl
+                    || self.egui_input.modifiers.command
+                    || self.egui_input.modifiers.mac_cmd;
+                if pressed && !is_cmd {
+                    self.egui_input
+                        .events
+                        .push(egui::Event::Text(text.to_string()));
+                }
             }
         }
     }
@@ -699,7 +786,6 @@ impl State {
     pub fn handle_platform_output(
         &mut self,
         window: &Window,
-        egui_ctx: &egui::Context,
         platform_output: egui::PlatformOutput,
     ) {
         crate::profile_function!();
@@ -710,12 +796,10 @@ impl State {
             copied_text,
             events: _,                    // handled elsewhere
             mutable_text_under_cursor: _, // only used in eframe web
-            text_cursor_pos,
+            ime,
             #[cfg(feature = "accesskit")]
             accesskit_update,
         } = platform_output;
-
-        self.current_pixels_per_point = egui_ctx.pixels_per_point(); // someone can have changed it to scale the UI
 
         self.set_cursor_icon(window, cursor_icon);
 
@@ -727,19 +811,40 @@ impl State {
             self.clipboard.set(copied_text);
         }
 
-        let allow_ime = text_cursor_pos.is_some();
+        let allow_ime = ime.is_some();
         if self.allow_ime != allow_ime {
             self.allow_ime = allow_ime;
+            crate::profile_scope!("set_ime_allowed");
             window.set_ime_allowed(allow_ime);
         }
 
-        if let Some(egui::Pos2 { x, y }) = text_cursor_pos {
-            window.set_ime_position(winit::dpi::LogicalPosition { x, y });
+        if let Some(ime) = ime {
+            let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+            let ime_rect_px = pixels_per_point * ime.rect;
+            if self.ime_rect_px != Some(ime_rect_px)
+                || self.egui_ctx.input(|i| !i.events.is_empty())
+            {
+                self.ime_rect_px = Some(ime_rect_px);
+                crate::profile_scope!("set_ime_cursor_area");
+                window.set_ime_cursor_area(
+                    winit::dpi::PhysicalPosition {
+                        x: ime_rect_px.min.x,
+                        y: ime_rect_px.min.y,
+                    },
+                    winit::dpi::PhysicalSize {
+                        width: ime_rect_px.width(),
+                        height: ime_rect_px.height(),
+                    },
+                );
+            }
+        } else {
+            self.ime_rect_px = None;
         }
 
         #[cfg(feature = "accesskit")]
         if let Some(accesskit) = self.accesskit.as_ref() {
             if let Some(update) = accesskit_update {
+                crate::profile_scope!("accesskit");
                 accesskit.update_if_active(|| update);
             }
         }
@@ -772,16 +877,14 @@ impl State {
 /// Update the given viewport info with the current state of the window.
 ///
 /// Call before [`State::take_egui_input`].
-pub fn update_viewport_info(info: &mut ViewportInfo, egui_ctx: &egui::Context, window: &Window) {
-    update_viewport_info_impl(info, window, pixels_per_point(egui_ctx, window));
-}
-
-fn update_viewport_info_impl(
+pub fn update_viewport_info(
     viewport_info: &mut ViewportInfo,
+    egui_ctx: &egui::Context,
     window: &Window,
-    pixels_per_point: f32,
 ) {
     crate::profile_function!();
+
+    let pixels_per_point = pixels_per_point(egui_ctx, window);
 
     let has_a_position = match window.is_minimized() {
         None | Some(true) => false,
@@ -853,12 +956,12 @@ fn update_viewport_info_impl(
     viewport_info.outer_rect = outer_rect;
     viewport_info.title = Some(window.title());
 
-    if false {
+    if cfg!(target_os = "windows") {
         // It's tempting to do this, but it leads to a deadlock on Mac when running
         // `cargo run -p custom_window_frame`.
         // See https://github.com/emilk/egui/issues/3494
         viewport_info.maximized = Some(window.is_maximized());
-        viewport_info.minimized = window.is_minimized().or(viewport_info.minimized);
+        viewport_info.minimized = Some(window.is_minimized().unwrap_or(false));
     }
 }
 
@@ -886,25 +989,22 @@ fn is_printable_char(chr: char) -> bool {
     !is_in_private_use_area && !chr.is_ascii_control()
 }
 
-fn is_cut_command(modifiers: egui::Modifiers, keycode: winit::event::VirtualKeyCode) -> bool {
-    (modifiers.command && keycode == winit::event::VirtualKeyCode::X)
-        || (cfg!(target_os = "windows")
-            && modifiers.shift
-            && keycode == winit::event::VirtualKeyCode::Delete)
+fn is_cut_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
+    keycode == egui::Key::Cut
+        || (modifiers.command && keycode == egui::Key::X)
+        || (cfg!(target_os = "windows") && modifiers.shift && keycode == egui::Key::Delete)
 }
 
-fn is_copy_command(modifiers: egui::Modifiers, keycode: winit::event::VirtualKeyCode) -> bool {
-    (modifiers.command && keycode == winit::event::VirtualKeyCode::C)
-        || (cfg!(target_os = "windows")
-            && modifiers.ctrl
-            && keycode == winit::event::VirtualKeyCode::Insert)
+fn is_copy_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
+    keycode == egui::Key::Copy
+        || (modifiers.command && keycode == egui::Key::C)
+        || (cfg!(target_os = "windows") && modifiers.ctrl && keycode == egui::Key::Insert)
 }
 
-fn is_paste_command(modifiers: egui::Modifiers, keycode: winit::event::VirtualKeyCode) -> bool {
-    (modifiers.command && keycode == winit::event::VirtualKeyCode::V)
-        || (cfg!(target_os = "windows")
-            && modifiers.shift
-            && keycode == winit::event::VirtualKeyCode::Insert)
+fn is_paste_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
+    keycode == egui::Key::Paste
+        || (modifiers.command && keycode == egui::Key::V)
+        || (cfg!(target_os = "windows") && modifiers.shift && keycode == egui::Key::Insert)
 }
 
 fn translate_mouse_button(button: winit::event::MouseButton) -> Option<egui::PointerButton> {
@@ -912,100 +1012,201 @@ fn translate_mouse_button(button: winit::event::MouseButton) -> Option<egui::Poi
         winit::event::MouseButton::Left => Some(egui::PointerButton::Primary),
         winit::event::MouseButton::Right => Some(egui::PointerButton::Secondary),
         winit::event::MouseButton::Middle => Some(egui::PointerButton::Middle),
-        winit::event::MouseButton::Other(1) => Some(egui::PointerButton::Extra1),
-        winit::event::MouseButton::Other(2) => Some(egui::PointerButton::Extra2),
+        winit::event::MouseButton::Back => Some(egui::PointerButton::Extra1),
+        winit::event::MouseButton::Forward => Some(egui::PointerButton::Extra2),
         winit::event::MouseButton::Other(_) => None,
     }
 }
 
-fn translate_virtual_key_code(key: winit::event::VirtualKeyCode) -> Option<egui::Key> {
+fn key_from_winit_key(key: &winit::keyboard::Key) -> Option<egui::Key> {
+    match key {
+        winit::keyboard::Key::Named(named_key) => key_from_named_key(*named_key),
+        winit::keyboard::Key::Character(str) => egui::Key::from_name(str.as_str()),
+        winit::keyboard::Key::Unidentified(_) | winit::keyboard::Key::Dead(_) => None,
+    }
+}
+
+fn key_from_named_key(named_key: winit::keyboard::NamedKey) -> Option<egui::Key> {
     use egui::Key;
-    use winit::event::VirtualKeyCode;
+    use winit::keyboard::NamedKey;
+
+    Some(match named_key {
+        NamedKey::Enter => Key::Enter,
+        NamedKey::Tab => Key::Tab,
+        NamedKey::ArrowDown => Key::ArrowDown,
+        NamedKey::ArrowLeft => Key::ArrowLeft,
+        NamedKey::ArrowRight => Key::ArrowRight,
+        NamedKey::ArrowUp => Key::ArrowUp,
+        NamedKey::End => Key::End,
+        NamedKey::Home => Key::Home,
+        NamedKey::PageDown => Key::PageDown,
+        NamedKey::PageUp => Key::PageUp,
+        NamedKey::Backspace => Key::Backspace,
+        NamedKey::Delete => Key::Delete,
+        NamedKey::Insert => Key::Insert,
+        NamedKey::Escape => Key::Escape,
+        NamedKey::Cut => Key::Cut,
+        NamedKey::Copy => Key::Copy,
+        NamedKey::Paste => Key::Paste,
+
+        NamedKey::Space => Key::Space,
+
+        NamedKey::F1 => Key::F1,
+        NamedKey::F2 => Key::F2,
+        NamedKey::F3 => Key::F3,
+        NamedKey::F4 => Key::F4,
+        NamedKey::F5 => Key::F5,
+        NamedKey::F6 => Key::F6,
+        NamedKey::F7 => Key::F7,
+        NamedKey::F8 => Key::F8,
+        NamedKey::F9 => Key::F9,
+        NamedKey::F10 => Key::F10,
+        NamedKey::F11 => Key::F11,
+        NamedKey::F12 => Key::F12,
+        NamedKey::F13 => Key::F13,
+        NamedKey::F14 => Key::F14,
+        NamedKey::F15 => Key::F15,
+        NamedKey::F16 => Key::F16,
+        NamedKey::F17 => Key::F17,
+        NamedKey::F18 => Key::F18,
+        NamedKey::F19 => Key::F19,
+        NamedKey::F20 => Key::F20,
+        NamedKey::F21 => Key::F21,
+        NamedKey::F22 => Key::F22,
+        NamedKey::F23 => Key::F23,
+        NamedKey::F24 => Key::F24,
+        NamedKey::F25 => Key::F25,
+        NamedKey::F26 => Key::F26,
+        NamedKey::F27 => Key::F27,
+        NamedKey::F28 => Key::F28,
+        NamedKey::F29 => Key::F29,
+        NamedKey::F30 => Key::F30,
+        NamedKey::F31 => Key::F31,
+        NamedKey::F32 => Key::F32,
+        NamedKey::F33 => Key::F33,
+        NamedKey::F34 => Key::F34,
+        NamedKey::F35 => Key::F35,
+        _ => {
+            log::trace!("Unknown key: {named_key:?}");
+            return None;
+        }
+    })
+}
+
+fn key_from_key_code(key: winit::keyboard::KeyCode) -> Option<egui::Key> {
+    use egui::Key;
+    use winit::keyboard::KeyCode;
 
     Some(match key {
-        VirtualKeyCode::Down => Key::ArrowDown,
-        VirtualKeyCode::Left => Key::ArrowLeft,
-        VirtualKeyCode::Right => Key::ArrowRight,
-        VirtualKeyCode::Up => Key::ArrowUp,
+        KeyCode::ArrowDown => Key::ArrowDown,
+        KeyCode::ArrowLeft => Key::ArrowLeft,
+        KeyCode::ArrowRight => Key::ArrowRight,
+        KeyCode::ArrowUp => Key::ArrowUp,
 
-        VirtualKeyCode::Escape => Key::Escape,
-        VirtualKeyCode::Tab => Key::Tab,
-        VirtualKeyCode::Back => Key::Backspace,
-        VirtualKeyCode::Return | VirtualKeyCode::NumpadEnter => Key::Enter,
-        VirtualKeyCode::Space => Key::Space,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
 
-        VirtualKeyCode::Insert => Key::Insert,
-        VirtualKeyCode::Delete => Key::Delete,
-        VirtualKeyCode::Home => Key::Home,
-        VirtualKeyCode::End => Key::End,
-        VirtualKeyCode::PageUp => Key::PageUp,
-        VirtualKeyCode::PageDown => Key::PageDown,
+        KeyCode::Insert => Key::Insert,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
 
-        VirtualKeyCode::Minus | VirtualKeyCode::NumpadSubtract => Key::Minus,
-        // Using Mac the key with the Plus sign on it is reported as the Equals key
-        // (with both English and Swedish keyboard).
-        VirtualKeyCode::Equals | VirtualKeyCode::Plus | VirtualKeyCode::NumpadAdd => {
-            Key::PlusEquals
-        }
+        // Punctuation
+        KeyCode::Space => Key::Space,
+        KeyCode::Comma => Key::Comma,
+        KeyCode::Period => Key::Period,
+        // KeyCode::Colon => Key::Colon, // NOTE: there is no physical colon key on an american keyboard
+        KeyCode::Semicolon => Key::Semicolon,
+        KeyCode::Backslash => Key::Backslash,
+        KeyCode::Slash | KeyCode::NumpadDivide => Key::Slash,
+        KeyCode::BracketLeft => Key::OpenBracket,
+        KeyCode::BracketRight => Key::CloseBracket,
+        KeyCode::Backquote => Key::Backtick,
 
-        VirtualKeyCode::Key0 | VirtualKeyCode::Numpad0 => Key::Num0,
-        VirtualKeyCode::Key1 | VirtualKeyCode::Numpad1 => Key::Num1,
-        VirtualKeyCode::Key2 | VirtualKeyCode::Numpad2 => Key::Num2,
-        VirtualKeyCode::Key3 | VirtualKeyCode::Numpad3 => Key::Num3,
-        VirtualKeyCode::Key4 | VirtualKeyCode::Numpad4 => Key::Num4,
-        VirtualKeyCode::Key5 | VirtualKeyCode::Numpad5 => Key::Num5,
-        VirtualKeyCode::Key6 | VirtualKeyCode::Numpad6 => Key::Num6,
-        VirtualKeyCode::Key7 | VirtualKeyCode::Numpad7 => Key::Num7,
-        VirtualKeyCode::Key8 | VirtualKeyCode::Numpad8 => Key::Num8,
-        VirtualKeyCode::Key9 | VirtualKeyCode::Numpad9 => Key::Num9,
+        KeyCode::Cut => Key::Cut,
+        KeyCode::Copy => Key::Copy,
+        KeyCode::Paste => Key::Paste,
+        KeyCode::Minus | KeyCode::NumpadSubtract => Key::Minus,
+        KeyCode::NumpadAdd => Key::Plus,
+        KeyCode::Equal => Key::Equals,
 
-        VirtualKeyCode::A => Key::A,
-        VirtualKeyCode::B => Key::B,
-        VirtualKeyCode::C => Key::C,
-        VirtualKeyCode::D => Key::D,
-        VirtualKeyCode::E => Key::E,
-        VirtualKeyCode::F => Key::F,
-        VirtualKeyCode::G => Key::G,
-        VirtualKeyCode::H => Key::H,
-        VirtualKeyCode::I => Key::I,
-        VirtualKeyCode::J => Key::J,
-        VirtualKeyCode::K => Key::K,
-        VirtualKeyCode::L => Key::L,
-        VirtualKeyCode::M => Key::M,
-        VirtualKeyCode::N => Key::N,
-        VirtualKeyCode::O => Key::O,
-        VirtualKeyCode::P => Key::P,
-        VirtualKeyCode::Q => Key::Q,
-        VirtualKeyCode::R => Key::R,
-        VirtualKeyCode::S => Key::S,
-        VirtualKeyCode::T => Key::T,
-        VirtualKeyCode::U => Key::U,
-        VirtualKeyCode::V => Key::V,
-        VirtualKeyCode::W => Key::W,
-        VirtualKeyCode::X => Key::X,
-        VirtualKeyCode::Y => Key::Y,
-        VirtualKeyCode::Z => Key::Z,
+        KeyCode::Digit0 | KeyCode::Numpad0 => Key::Num0,
+        KeyCode::Digit1 | KeyCode::Numpad1 => Key::Num1,
+        KeyCode::Digit2 | KeyCode::Numpad2 => Key::Num2,
+        KeyCode::Digit3 | KeyCode::Numpad3 => Key::Num3,
+        KeyCode::Digit4 | KeyCode::Numpad4 => Key::Num4,
+        KeyCode::Digit5 | KeyCode::Numpad5 => Key::Num5,
+        KeyCode::Digit6 | KeyCode::Numpad6 => Key::Num6,
+        KeyCode::Digit7 | KeyCode::Numpad7 => Key::Num7,
+        KeyCode::Digit8 | KeyCode::Numpad8 => Key::Num8,
+        KeyCode::Digit9 | KeyCode::Numpad9 => Key::Num9,
 
-        VirtualKeyCode::F1 => Key::F1,
-        VirtualKeyCode::F2 => Key::F2,
-        VirtualKeyCode::F3 => Key::F3,
-        VirtualKeyCode::F4 => Key::F4,
-        VirtualKeyCode::F5 => Key::F5,
-        VirtualKeyCode::F6 => Key::F6,
-        VirtualKeyCode::F7 => Key::F7,
-        VirtualKeyCode::F8 => Key::F8,
-        VirtualKeyCode::F9 => Key::F9,
-        VirtualKeyCode::F10 => Key::F10,
-        VirtualKeyCode::F11 => Key::F11,
-        VirtualKeyCode::F12 => Key::F12,
-        VirtualKeyCode::F13 => Key::F13,
-        VirtualKeyCode::F14 => Key::F14,
-        VirtualKeyCode::F15 => Key::F15,
-        VirtualKeyCode::F16 => Key::F16,
-        VirtualKeyCode::F17 => Key::F17,
-        VirtualKeyCode::F18 => Key::F18,
-        VirtualKeyCode::F19 => Key::F19,
-        VirtualKeyCode::F20 => Key::F20,
+        KeyCode::KeyA => Key::A,
+        KeyCode::KeyB => Key::B,
+        KeyCode::KeyC => Key::C,
+        KeyCode::KeyD => Key::D,
+        KeyCode::KeyE => Key::E,
+        KeyCode::KeyF => Key::F,
+        KeyCode::KeyG => Key::G,
+        KeyCode::KeyH => Key::H,
+        KeyCode::KeyI => Key::I,
+        KeyCode::KeyJ => Key::J,
+        KeyCode::KeyK => Key::K,
+        KeyCode::KeyL => Key::L,
+        KeyCode::KeyM => Key::M,
+        KeyCode::KeyN => Key::N,
+        KeyCode::KeyO => Key::O,
+        KeyCode::KeyP => Key::P,
+        KeyCode::KeyQ => Key::Q,
+        KeyCode::KeyR => Key::R,
+        KeyCode::KeyS => Key::S,
+        KeyCode::KeyT => Key::T,
+        KeyCode::KeyU => Key::U,
+        KeyCode::KeyV => Key::V,
+        KeyCode::KeyW => Key::W,
+        KeyCode::KeyX => Key::X,
+        KeyCode::KeyY => Key::Y,
+        KeyCode::KeyZ => Key::Z,
+
+        KeyCode::F1 => Key::F1,
+        KeyCode::F2 => Key::F2,
+        KeyCode::F3 => Key::F3,
+        KeyCode::F4 => Key::F4,
+        KeyCode::F5 => Key::F5,
+        KeyCode::F6 => Key::F6,
+        KeyCode::F7 => Key::F7,
+        KeyCode::F8 => Key::F8,
+        KeyCode::F9 => Key::F9,
+        KeyCode::F10 => Key::F10,
+        KeyCode::F11 => Key::F11,
+        KeyCode::F12 => Key::F12,
+        KeyCode::F13 => Key::F13,
+        KeyCode::F14 => Key::F14,
+        KeyCode::F15 => Key::F15,
+        KeyCode::F16 => Key::F16,
+        KeyCode::F17 => Key::F17,
+        KeyCode::F18 => Key::F18,
+        KeyCode::F19 => Key::F19,
+        KeyCode::F20 => Key::F20,
+        KeyCode::F21 => Key::F21,
+        KeyCode::F22 => Key::F22,
+        KeyCode::F23 => Key::F23,
+        KeyCode::F24 => Key::F24,
+        KeyCode::F25 => Key::F25,
+        KeyCode::F26 => Key::F26,
+        KeyCode::F27 => Key::F27,
+        KeyCode::F28 => Key::F28,
+        KeyCode::F29 => Key::F29,
+        KeyCode::F30 => Key::F30,
+        KeyCode::F31 => Key::F31,
+        KeyCode::F32 => Key::F32,
+        KeyCode::F33 => Key::F33,
+        KeyCode::F34 => Key::F34,
+        KeyCode::F35 => Key::F35,
 
         _ => {
             return None;
@@ -1030,7 +1231,7 @@ fn translate_cursor(cursor_icon: egui::CursorIcon) -> Option<winit::window::Curs
         egui::CursorIcon::Move => Some(winit::window::CursorIcon::Move),
         egui::CursorIcon::NoDrop => Some(winit::window::CursorIcon::NoDrop),
         egui::CursorIcon::NotAllowed => Some(winit::window::CursorIcon::NotAllowed),
-        egui::CursorIcon::PointingHand => Some(winit::window::CursorIcon::Hand),
+        egui::CursorIcon::PointingHand => Some(winit::window::CursorIcon::Pointer),
         egui::CursorIcon::Progress => Some(winit::window::CursorIcon::Progress),
 
         egui::CursorIcon::ResizeHorizontal => Some(winit::window::CursorIcon::EwResize),
@@ -1092,7 +1293,7 @@ fn process_viewport_command(
 
     use winit::window::ResizeDirection;
 
-    log::debug!("Processing ViewportCommand::{command:?}");
+    log::trace!("Processing ViewportCommand::{command:?}");
 
     let pixels_per_point = pixels_per_point(egui_ctx, window);
 
@@ -1106,7 +1307,7 @@ fn process_viewport_command(
         ViewportCommand::StartDrag => {
             // If `is_viewport_focused` is not checked on x11 the input will be permanently taken until the app is killed!
 
-            // TODO: check that the left mouse-button was pressed down recently,
+            // TODO(emilk): check that the left mouse-button was pressed down recently,
             // or we will have bugs on Windows.
             // See https://github.com/emilk/egui/pull/1108
             if is_viewport_focused {
@@ -1118,12 +1319,18 @@ fn process_viewport_command(
         ViewportCommand::InnerSize(size) => {
             let width_px = pixels_per_point * size.x.max(1.0);
             let height_px = pixels_per_point * size.y.max(1.0);
-            window.set_inner_size(PhysicalSize::new(width_px, height_px));
+            if window
+                .request_inner_size(PhysicalSize::new(width_px, height_px))
+                .is_some()
+            {
+                log::debug!("ViewportCommand::InnerSize ignored by winit");
+            }
         }
         ViewportCommand::BeginResize(direction) => {
             if let Err(err) = window.drag_resize_window(match direction {
                 egui::viewport::ResizeDirection::North => ResizeDirection::North,
                 egui::viewport::ResizeDirection::South => ResizeDirection::South,
+                egui::viewport::ResizeDirection::East => ResizeDirection::East,
                 egui::viewport::ResizeDirection::West => ResizeDirection::West,
                 egui::viewport::ResizeDirection::NorthEast => ResizeDirection::NorthEast,
                 egui::viewport::ResizeDirection::SouthEast => ResizeDirection::SouthEast,
@@ -1197,16 +1404,17 @@ fn process_viewport_command(
             egui::viewport::WindowLevel::Normal => WindowLevel::Normal,
         }),
         ViewportCommand::Icon(icon) => {
-            window.set_window_icon(icon.map(|icon| {
-                winit::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height)
-                    .expect("Invalid ICON data!")
-            }));
+            let winit_icon = icon.and_then(|icon| to_winit_icon(&icon));
+            window.set_window_icon(winit_icon);
         }
-        ViewportCommand::IMEPosition(pos) => {
-            window.set_ime_position(PhysicalPosition::new(
-                pixels_per_point * pos.x,
-                pixels_per_point * pos.y,
-            ));
+        ViewportCommand::IMERect(rect) => {
+            window.set_ime_cursor_area(
+                PhysicalPosition::new(pixels_per_point * rect.min.x, pixels_per_point * rect.min.y),
+                PhysicalSize::new(
+                    pixels_per_point * rect.size().x,
+                    pixels_per_point * rect.size().y,
+                ),
+            );
         }
         ViewportCommand::IMEAllowed(v) => window.set_ime_allowed(v),
         ViewportCommand::IMEPurpose(p) => window.set_ime_purpose(match p {
@@ -1336,9 +1544,13 @@ pub fn create_winit_window_builder<T>(
 
         // Windows:
         drag_and_drop: _drag_and_drop,
+        taskbar: _taskbar,
 
         // wayland:
         app_id: _app_id,
+
+        // x11
+        window_type: _window_type,
 
         mouse_passthrough: _, // handled in `apply_viewport_builder_to_window`
     } = viewport_builder;
@@ -1402,10 +1614,8 @@ pub fn create_winit_window_builder<T>(
     }
 
     if let Some(icon) = icon {
-        window_builder = window_builder.with_window_icon(Some(
-            winit::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height)
-                .expect("Invalid Icon Data!"),
-        ));
+        let winit_icon = to_winit_icon(&icon);
+        window_builder = window_builder.with_window_icon(winit_icon);
     }
 
     #[cfg(all(feature = "wayland", target_os = "linux"))]
@@ -1414,10 +1624,39 @@ pub fn create_winit_window_builder<T>(
         window_builder = window_builder.with_name(app_id, "");
     }
 
+    #[cfg(all(feature = "x11", target_os = "linux"))]
+    {
+        if let Some(window_type) = _window_type {
+            use winit::platform::x11::WindowBuilderExtX11 as _;
+            use winit::platform::x11::XWindowType;
+            window_builder = window_builder.with_x11_window_type(vec![match window_type {
+                egui::X11WindowType::Normal => XWindowType::Normal,
+                egui::X11WindowType::Utility => XWindowType::Utility,
+                egui::X11WindowType::Dock => XWindowType::Dock,
+                egui::X11WindowType::Desktop => XWindowType::Desktop,
+                egui::X11WindowType::Toolbar => XWindowType::Toolbar,
+                egui::X11WindowType::Menu => XWindowType::Menu,
+                egui::X11WindowType::Splash => XWindowType::Splash,
+                egui::X11WindowType::Dialog => XWindowType::Dialog,
+                egui::X11WindowType::DropdownMenu => XWindowType::DropdownMenu,
+                egui::X11WindowType::PopupMenu => XWindowType::PopupMenu,
+                egui::X11WindowType::Tooltip => XWindowType::Tooltip,
+                egui::X11WindowType::Notification => XWindowType::Notification,
+                egui::X11WindowType::Combo => XWindowType::Combo,
+                egui::X11WindowType::Dnd => XWindowType::Dnd,
+            }]);
+        }
+    }
+
     #[cfg(target_os = "windows")]
-    if let Some(enable) = _drag_and_drop {
+    {
         use winit::platform::windows::WindowBuilderExtWindows as _;
-        window_builder = window_builder.with_drag_and_drop(enable);
+        if let Some(enable) = _drag_and_drop {
+            window_builder = window_builder.with_drag_and_drop(enable);
+        }
+        if let Some(show) = _taskbar {
+            window_builder = window_builder.with_skip_taskbar(!show);
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -1433,12 +1672,17 @@ pub fn create_winit_window_builder<T>(
     window_builder
 }
 
-/// Applies what `create_winit_window_builder` couldn't
-#[deprecated = "Use apply_viewport_builder_to_window instead"]
-pub fn apply_viewport_builder_to_new_window(window: &Window, builder: &ViewportBuilder) {
-    if let Some(mouse_passthrough) = builder.mouse_passthrough {
-        if let Err(err) = window.set_cursor_hittest(!mouse_passthrough) {
-            log::warn!("set_cursor_hittest failed: {err}");
+fn to_winit_icon(icon: &egui::IconData) -> Option<winit::window::Icon> {
+    if icon.is_empty() {
+        None
+    } else {
+        crate::profile_function!();
+        match winit::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height) {
+            Ok(winit_icon) => Some(winit_icon),
+            Err(err) => {
+                log::warn!("Invalid IconData: {err}");
+                None
+            }
         }
     }
 }
@@ -1464,10 +1708,15 @@ pub fn apply_viewport_builder_to_window(
         let pixels_per_point = pixels_per_point(egui_ctx, window);
 
         if let Some(size) = builder.inner_size {
-            window.set_inner_size(PhysicalSize::new(
-                pixels_per_point * size.x,
-                pixels_per_point * size.y,
-            ));
+            if window
+                .request_inner_size(PhysicalSize::new(
+                    pixels_per_point * size.x,
+                    pixels_per_point * size.y,
+                ))
+                .is_some()
+            {
+                log::debug!("Failed to set window size");
+            }
         }
         if let Some(size) = builder.min_inner_size {
             window.set_min_inner_size(Some(PhysicalSize::new(
@@ -1492,16 +1741,15 @@ pub fn apply_viewport_builder_to_window(
 
 /// Short and fast description of an event.
 /// Useful for logging and profiling.
-pub fn short_generic_event_description<T>(event: &winit::event::Event<'_, T>) -> &'static str {
+pub fn short_generic_event_description<T>(event: &winit::event::Event<T>) -> &'static str {
     use winit::event::{DeviceEvent, Event, StartCause};
 
     match event {
+        Event::AboutToWait => "Event::AboutToWait",
+        Event::LoopExiting => "Event::LoopExiting",
         Event::Suspended => "Event::Suspended",
         Event::Resumed => "Event::Resumed",
-        Event::MainEventsCleared => "Event::MainEventsCleared",
-        Event::RedrawRequested(_) => "Event::RedrawRequested",
-        Event::RedrawEventsCleared => "Event::RedrawEventsCleared",
-        Event::LoopDestroyed => "Event::LoopDestroyed",
+        Event::MemoryWarning => "Event::MemoryWarning",
         Event::UserEvent(_) => "UserEvent",
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::Added { .. } => "DeviceEvent::Added",
@@ -1511,7 +1759,6 @@ pub fn short_generic_event_description<T>(event: &winit::event::Event<'_, T>) ->
             DeviceEvent::Motion { .. } => "DeviceEvent::Motion",
             DeviceEvent::Button { .. } => "DeviceEvent::Button",
             DeviceEvent::Key { .. } => "DeviceEvent::Key",
-            DeviceEvent::Text { .. } => "DeviceEvent::Text",
         },
         Event::NewEvents(start_cause) => match start_cause {
             StartCause::ResumeTimeReached { .. } => "NewEvents::ResumeTimeReached",
@@ -1525,10 +1772,11 @@ pub fn short_generic_event_description<T>(event: &winit::event::Event<'_, T>) ->
 
 /// Short and fast description of an event.
 /// Useful for logging and profiling.
-pub fn short_window_event_description(event: &winit::event::WindowEvent<'_>) -> &'static str {
+pub fn short_window_event_description(event: &winit::event::WindowEvent) -> &'static str {
     use winit::event::WindowEvent;
 
     match event {
+        WindowEvent::ActivationTokenDone { .. } => "WindowEvent::ActivationTokenDone",
         WindowEvent::Resized { .. } => "WindowEvent::Resized",
         WindowEvent::Moved { .. } => "WindowEvent::Moved",
         WindowEvent::CloseRequested { .. } => "WindowEvent::CloseRequested",
@@ -1536,7 +1784,6 @@ pub fn short_window_event_description(event: &winit::event::WindowEvent<'_>) -> 
         WindowEvent::DroppedFile { .. } => "WindowEvent::DroppedFile",
         WindowEvent::HoveredFile { .. } => "WindowEvent::HoveredFile",
         WindowEvent::HoveredFileCancelled { .. } => "WindowEvent::HoveredFileCancelled",
-        WindowEvent::ReceivedCharacter { .. } => "WindowEvent::ReceivedCharacter",
         WindowEvent::Focused { .. } => "WindowEvent::Focused",
         WindowEvent::KeyboardInput { .. } => "WindowEvent::KeyboardInput",
         WindowEvent::ModifiersChanged { .. } => "WindowEvent::ModifiersChanged",
@@ -1547,6 +1794,7 @@ pub fn short_window_event_description(event: &winit::event::WindowEvent<'_>) -> 
         WindowEvent::MouseWheel { .. } => "WindowEvent::MouseWheel",
         WindowEvent::MouseInput { .. } => "WindowEvent::MouseInput",
         WindowEvent::TouchpadMagnify { .. } => "WindowEvent::TouchpadMagnify",
+        WindowEvent::RedrawRequested { .. } => "WindowEvent::RedrawRequested",
         WindowEvent::SmartMagnify { .. } => "WindowEvent::SmartMagnify",
         WindowEvent::TouchpadRotate { .. } => "WindowEvent::TouchpadRotate",
         WindowEvent::TouchpadPressure { .. } => "WindowEvent::TouchpadPressure",

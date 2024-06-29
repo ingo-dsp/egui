@@ -12,6 +12,7 @@ pub struct WidgetGallery {
     enabled: bool,
     visible: bool,
     boolean: bool,
+    opacity: f32,
     radio: Enum,
     scalar: f32,
     string: String,
@@ -28,6 +29,7 @@ impl Default for WidgetGallery {
         Self {
             enabled: true,
             visible: true,
+            opacity: 1.0,
             boolean: false,
             radio: Enum::First,
             scalar: 42.0,
@@ -48,7 +50,7 @@ impl super::Demo for WidgetGallery {
     fn show(&mut self, ctx: &egui::Context, open: &mut bool) {
         egui::Window::new(self.name())
             .open(open)
-            .resizable(true)
+            .resizable([true, false])
             .default_width(280.0)
             .show(ctx, |ui| {
                 use super::View as _;
@@ -61,6 +63,7 @@ impl super::View for WidgetGallery {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.add_enabled_ui(self.enabled, |ui| {
             ui.set_visible(self.visible);
+            ui.set_opacity(self.opacity);
 
             egui::Grid::new("my_grid")
                 .num_columns(2)
@@ -79,6 +82,12 @@ impl super::View for WidgetGallery {
             if self.visible {
                 ui.checkbox(&mut self.enabled, "Interactive")
                     .on_hover_text("Uncheck to inspect how the widgets look when disabled.");
+                (ui.add(
+                    egui::DragValue::new(&mut self.opacity)
+                        .speed(0.01)
+                        .clamp_range(0.0..=1.0),
+                ) | ui.label("Opacity"))
+                .on_hover_text("Reduce this value to make widgets semi-transparent");
             }
         });
 
@@ -99,6 +108,7 @@ impl WidgetGallery {
         let Self {
             enabled: _,
             visible: _,
+            opacity: _,
             boolean,
             radio,
             scalar,

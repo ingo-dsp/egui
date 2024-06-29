@@ -267,6 +267,37 @@
 //! }
 //! ```
 //!
+//!
+//! ## Widget interaction
+//! Each widget has a [`Sense`], which defines whether or not the widget
+//! is sensitive to clickicking and/or drags.
+//!
+//! For instance, a [`Button`] only has a [`Sense::click`] (by default).
+//! This means if you drag a button it will not respond with [`Response::dragged`].
+//! Instead, the drag will continue through the button to the first
+//! widget behind it that is sensitive to dragging, which for instance could be
+//! a [`ScrollArea`]. This lets you scroll by dragging a scroll area (important
+//! on touch screens), just as long as you don't drag on a widget that is sensitive
+//! to drags (e.g. a [`Slider`]).
+//!
+//! When widgets overlap it is the last added one
+//! that is considered to be on top and which will get input priority.
+//!
+//! The widget interaction logic is run at the _start_ of each frame,
+//! based on the output from the previous frame.
+//! This means that when a new widget shows up you cannot click it in the same
+//! frame (i.e. in the same fraction of a second), but unless the user
+//! is spider-man, they wouldn't be fast enough to do so anyways.
+//!
+//! By running the interaction code early, egui can actually
+//! tell you if a widget is being interacted with _before_ you add it,
+//! as long as you know its [`Id`] before-hand (e.g. using [`Ui::next_auto_id`]),
+//! by calling [`Context::read_response`].
+//! This can be useful in some circumstances in order to style a widget,
+//! or to respond to interactions before adding the widget
+//! (perhaps on top of other widgets).
+//!
+//!
 //! ## Auto-sizing panels and windows
 //! In egui, all panels and windows auto-shrink to fit the content.
 //! If the window or panel is also resizable, this can lead to a weird behavior
@@ -333,6 +364,10 @@
 //! }); // the temporary settings are reverted here
 //! # });
 //! ```
+//!
+//! ## Installing additional fonts
+//! The default egui fonts only support latin and cryllic characters, and some emojis.
+//! To use egui with e.g. asian characters you need to install your own font (`.ttf` or `.otf`) using [`Context::set_fonts`].
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -343,11 +378,15 @@ mod animation_manager;
 pub mod containers;
 mod context;
 mod data;
+pub mod debug_text;
+mod drag_and_drop;
 mod frame_state;
 pub(crate) mod grid;
 pub mod gui_zoom;
+mod hit_test;
 mod id;
 mod input_state;
+mod interaction;
 pub mod introspection;
 pub mod layers;
 mod layout;
@@ -360,9 +399,11 @@ pub(crate) mod placer;
 mod response;
 mod sense;
 pub mod style;
+pub mod text_selection;
 mod ui;
 pub mod util;
 pub mod viewport;
+mod widget_rect;
 pub mod widget_text;
 pub mod widgets;
 
@@ -388,13 +429,13 @@ pub use emath::{
 pub use epaint::{
     mutex,
     text::{FontData, FontDefinitions, FontFamily, FontId, FontTweak},
-    textures::{TextureFilter, TextureOptions, TexturesDelta},
-    ClippedPrimitive, ColorImage, FontImage, ImageData, Mesh, PaintCallback, PaintCallbackInfo,
-    Rounding, Shape, Stroke, TextureHandle, TextureId,
+    textures::{TextureFilter, TextureOptions, TextureWrapMode, TexturesDelta},
+    ClippedPrimitive, ColorImage, FontImage, ImageData, Margin, Mesh, PaintCallback,
+    PaintCallbackInfo, Rounding, Shape, Stroke, TextureHandle, TextureId,
 };
 
 pub mod text {
-    pub use crate::text_edit::CCursorRange;
+    pub use crate::text_selection::{CCursorRange, CursorRange};
     pub use epaint::text::{
         cursor::CCursor, FontData, FontDefinitions, FontFamily, Fonts, Galley, LayoutJob,
         LayoutSection, TextFormat, TextWrapping, TAB_SIZE,
@@ -403,13 +444,15 @@ pub mod text {
 
 pub use {
     containers::*,
-    context::{Context, RequestRepaintInfo},
+    context::{Context, RepaintCause, RequestRepaintInfo},
     data::{
         input::*,
         output::{
             self, CursorIcon, FullOutput, OpenUrl, PlatformOutput, UserAttentionType, WidgetInfo,
         },
+        Key,
     },
+    drag_and_drop::DragAndDrop,
     grid::Grid,
     id::{Id, IdMap},
     input_state::{InputState, MultiTouchInfo, PointerState},
@@ -420,10 +463,11 @@ pub use {
     painter::Painter,
     response::{InnerResponse, Response},
     sense::Sense,
-    style::{FontSelection, Margin, Style, TextStyle, Visuals},
+    style::{FontSelection, Style, TextStyle, Visuals},
     text::{Galley, TextFormat},
     ui::Ui,
     viewport::*,
+    widget_rect::{WidgetRect, WidgetRects},
     widget_text::{RichText, WidgetText},
     widgets::*,
 };
@@ -598,6 +642,8 @@ pub enum WidgetType {
     ImageButton,
 
     CollapsingHeader,
+
+    ProgressIndicator,
 
     /// If you cannot fit any of the above slots.
     ///

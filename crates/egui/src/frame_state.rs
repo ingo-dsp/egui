@@ -38,11 +38,6 @@ pub(crate) struct FrameState {
     /// Initialized to `None` at the start of each frame.
     pub(crate) tooltip_state: Option<TooltipFrameState>,
 
-    /// Set to [`InputState::scroll_delta`] on the start of each frame.
-    ///
-    /// Cleared by the first [`ScrollArea`] that makes use of it.
-    pub(crate) scroll_delta: Vec2, // TODO(emilk): move to `InputState` ?
-
     /// horizontal, vertical
     pub(crate) scroll_target: [Option<(Rangef, Option<Align>)>; 2],
 
@@ -67,7 +62,6 @@ impl Default for FrameState {
             unused_rect: Rect::NAN,
             used_by_panels: Rect::NAN,
             tooltip_state: None,
-            scroll_delta: Vec2::ZERO,
             scroll_target: [None, None],
             #[cfg(feature = "accesskit")]
             accesskit_state: None,
@@ -81,7 +75,7 @@ impl Default for FrameState {
 }
 
 impl FrameState {
-    pub(crate) fn begin_frame(&mut self, input: &InputState) {
+    pub(crate) fn begin_frame(&mut self, screen_rect: Rect) {
         crate::profile_function!();
         let Self {
             used_ids,
@@ -89,7 +83,6 @@ impl FrameState {
             unused_rect,
             used_by_panels,
             tooltip_state,
-            scroll_delta,
             scroll_target,
             #[cfg(feature = "accesskit")]
             accesskit_state,
@@ -101,11 +94,10 @@ impl FrameState {
         } = self;
 
         used_ids.clear();
-        *available_rect = input.screen_rect();
-        *unused_rect = input.screen_rect();
+        *available_rect = screen_rect;
+        *unused_rect = screen_rect;
         *used_by_panels = Rect::NOTHING;
         *tooltip_state = None;
-        *scroll_delta = input.scroll_delta;
         *scroll_target = [None, None];
 
         #[cfg(debug_assertions)]
