@@ -197,6 +197,7 @@ impl Painter {
     ///
     /// # Errors
     /// If the provided wgpu configuration does not match an available device.
+    #[cfg(feature = "winit")]
     pub async fn set_window(
         &mut self,
         viewport_id: ViewportId,
@@ -217,12 +218,33 @@ impl Painter {
         Ok(())
     }
 
+    pub async fn set_window_using_surface_target(
+        &mut self,
+        viewport_id: ViewportId,
+        window: Option<impl Into<wgpu::SurfaceTarget<'static>>>,
+        window_size: (u32, u32)
+    ) -> Result<(), crate::WgpuError> {
+        crate::profile_scope!("Painter::set_window"); // profile_function gives bad names for async functions
+
+        if let Some(window) = window {
+            if self.surfaces.get(&viewport_id).is_none() {
+                let surface = self.instance.create_surface(window)?;
+                self.add_surface(surface, viewport_id, window_size).await?;
+            }
+        } else {
+            log::warn!("No window - clearing all surfaces");
+            self.surfaces.clear();
+        }
+        Ok(())
+    }
+
     /// Updates (or clears) the [`winit::window::Window`] associated with the [`Painter`] without taking ownership of the window.
     ///
     /// Like [`set_window`](Self::set_window) except:
     ///
     /// # Safety
     /// The user is responsible for ensuring that the window is alive for as long as it is set.
+    #[cfg(feature = "winit")]
     pub async unsafe fn set_window_unsafe(
         &mut self,
         viewport_id: ViewportId,
@@ -250,7 +272,7 @@ impl Painter {
         &mut self,
         surface: wgpu::Surface<'static>,
         viewport_id: ViewportId,
-        size: winit::dpi::PhysicalSize<u32>,
+        size: (u32, u32)
     ) -> Result<(), crate::WgpuError> {
         let render_state = if let Some(render_state) = &self.render_state {
             render_state
@@ -286,17 +308,17 @@ impl Painter {
             viewport_id,
             SurfaceState {
                 surface,
-                width: size.width,
-                height: size.height,
+                width: size.0,
+                height: size.1,
                 alpha_mode,
                 supports_screenshot,
             },
         );
-        let Some(width) = NonZeroU32::new(size.width) else {
+        let Some(width) = NonZeroU32::new(size.0) else {
             log::debug!("The window width was zero; skipping generate textures");
             return Ok(());
         };
-        let Some(height) = NonZeroU32::new(size.height) else {
+        let Some(height) = NonZeroU32::new(size.1) else {
             log::debug!("The window height was zero; skipping generate textures");
             return Ok(());
         };

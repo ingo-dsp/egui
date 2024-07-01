@@ -26,7 +26,6 @@ mod renderer;
 pub use renderer::*;
 
 /// Module for painting [`egui`](https://github.com/emilk/egui) with [`wgpu`] on [`winit`].
-#[cfg(feature = "winit")]
 pub mod winit;
 
 use std::sync::Arc;
