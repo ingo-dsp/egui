@@ -209,7 +209,7 @@ impl Painter {
             let size = window.inner_size();
             if self.surfaces.get(&viewport_id).is_none() {
                 let surface = self.instance.create_surface(window)?;
-                self.add_surface(surface, viewport_id, size).await?;
+                self.add_surface(surface, viewport_id, (size.width, size.height)).await?;
             }
         } else {
             log::warn!("No window - clearing all surfaces");
@@ -259,7 +259,7 @@ impl Painter {
                     self.instance
                         .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window)?)?
                 };
-                self.add_surface(surface, viewport_id, size).await?;
+                self.add_surface(surface, viewport_id, (size.width, size.height)).await?;
             }
         } else {
             log::warn!("No window - clearing all surfaces");
