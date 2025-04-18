@@ -158,7 +158,7 @@ fn resize_canvas_to_screen_size(
     // See https://github.com/emilk/egui/issues/103
     let canvas_size_pixels = (canvas_size_pixels / 2.0).round() * 2.0;
 
-    let canvas_size_points = canvas_size_pixels / pixels_per_point;
+    let _canvas_size_points = canvas_size_pixels / pixels_per_point;
 
     // Make sure that the height and width are always even numbers.
     // otherwise, the page renders blurry on some platforms.
@@ -209,16 +209,15 @@ fn set_cursor_icon(cursor: egui::CursorIcon) -> Option<()> {
 #[cfg(web_sys_unstable_apis)]
 fn set_clipboard_text(s: &str) {
     if let Some(window) = web_sys::window() {
-        if let Some(clipboard) = window.navigator().clipboard() {
-            let promise = clipboard.write_text(s);
-            let future = wasm_bindgen_futures::JsFuture::from(promise);
-            let future = async move {
-                if let Err(err) = future.await {
-                    log::error!("Copy/cut action failed: {}", string_from_js_value(&err));
-                }
-            };
-            wasm_bindgen_futures::spawn_local(future);
-        }
+        let clipboard = window.navigator().clipboard();
+        let promise = clipboard.write_text(s);
+        let future = wasm_bindgen_futures::JsFuture::from(promise);
+        let future = async move {
+            if let Err(err) = future.await {
+                log::error!("Copy/cut action failed: {}", string_from_js_value(&err));
+            }
+        };
+        wasm_bindgen_futures::spawn_local(future);
     }
 }
 
