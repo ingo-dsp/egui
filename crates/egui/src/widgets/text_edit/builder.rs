@@ -694,7 +694,16 @@ impl<'t> TextEdit<'t> {
                     }
 
                     if text.is_mutable() {
-                        paint_cursor(&painter, ui.visuals(), primary_cursor_rect);
+
+                        // INGODSP: Backported code from current main branch
+                        // Only show cursor if the egui viewport has focus.
+                        // This is for two reasons:
+                        // * Don't give the impression that the user can type into a window without focus
+                        // * Don't repaint the ui because of a blinking cursor in an app that is not in focus
+                        let viewport_has_focus = ui.ctx().input(|i| i.focused);
+                        if viewport_has_focus {
+                            paint_cursor(&painter, ui.visuals(), primary_cursor_rect);
+                        }
 
                         if interactive {
                             // For IME, so only set it when text is editable and visible!
