@@ -101,14 +101,43 @@ pub fn install_text_agent(runner_ref: &WebRunner) -> Result<(), JsValue> {
 
     // When input lost focus, focus on it again.
     // It is useful when user click somewhere outside canvas.
+    // NB: Optionally re-focus it if document is still active to avoid stealing focus back from host apps like VSCode.
     let input_refocus = input.clone();
     runner_ref.add_event_listener(&input, "focusout", move |_event: web_sys::MouseEvent, _| {
         // Delay 10 ms, and focus again.
         let input_refocus = input_refocus.clone();
         call_after_delay(std::time::Duration::from_millis(10), move || {
-            input_refocus.focus().ok();
+            let window = web_sys::window();
+            let document = window.as_ref().and_then(|w| w.document());
+
+            let has_document_focus = document
+                .as_ref()
+                .and_then(|doc| doc.has_focus().ok())
+                .unwrap_or(false);
+
+            if has_document_focus {
+                input_refocus.focus().ok();
+            }
         });
     })?;
+
+    // Listen for when the window (iframe/tab) gains focus again.
+    {
+        let input_refocus = input.clone();
+        runner_ref.add_event_listener(&web_sys::window().unwrap(), "focus", move |_event: web_sys::FocusEvent, _| {
+            let document = web_sys::window().unwrap().document().unwrap();
+
+            let active_element = document.active_element();
+            let is_input_focused = match &active_element {
+                Some(el) => *el == ***input_refocus,
+                None => false,
+            };
+
+            if !is_input_focused {
+                input_refocus.focus().ok();
+            }
+        })?;
+    }
 
     body.append_child(&input)?;
 
