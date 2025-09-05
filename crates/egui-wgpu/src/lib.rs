@@ -32,7 +32,6 @@ pub use setup::{NativeAdapterSelectorMethod, WgpuSetup, WgpuSetupCreateNew, Wgpu
 pub mod capture;
 
 /// Module for painting [`egui`](https://github.com/emilk/egui) with [`wgpu`] on [`winit`].
-#[cfg(feature = "winit")]
 pub mod winit;
 
 use std::sync::Arc;

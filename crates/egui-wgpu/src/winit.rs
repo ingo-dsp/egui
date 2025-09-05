@@ -142,6 +142,7 @@ impl Painter {
     ///
     /// # Errors
     /// If the provided wgpu configuration does not match an available device.
+    #[cfg(feature = "winit")]
     pub async fn set_window(
         &mut self,
         viewport_id: ViewportId,
@@ -153,7 +154,28 @@ impl Painter {
             let size = window.inner_size();
             if !self.surfaces.contains_key(&viewport_id) {
                 let surface = self.instance.create_surface(window)?;
-                self.add_surface(surface, viewport_id, size).await?;
+                self.add_surface(surface, viewport_id, (size.width, size.height)).await?;
+            }
+        } else {
+            log::warn!("No window - clearing all surfaces");
+            self.surfaces.clear();
+        }
+        Ok(())
+    }
+
+    /// Added by ingo
+    pub async fn set_window_using_surface_target(
+        &mut self,
+        viewport_id: ViewportId,
+        window: Option<impl Into<wgpu::SurfaceTarget<'static>>>,
+        window_size: (u32, u32)
+    ) -> Result<(), crate::WgpuError> {
+        profiling::scope!("Painter::set_window_using_surface_target"); // profile_function gives bad names for async functions
+
+        if let Some(window) = window {
+            if !self.surfaces.contains_key(&viewport_id) {
+                let surface = self.instance.create_surface(window)?;
+                self.add_surface(surface, viewport_id, window_size).await?;
             }
         } else {
             log::warn!("No window - clearing all surfaces");
@@ -168,6 +190,7 @@ impl Painter {
     ///
     /// # Safety
     /// The user is responsible for ensuring that the window is alive for as long as it is set.
+    #[cfg(feature = "winit")]
     pub async unsafe fn set_window_unsafe(
         &mut self,
         viewport_id: ViewportId,
@@ -182,7 +205,7 @@ impl Painter {
                     self.instance
                         .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window)?)?
                 };
-                self.add_surface(surface, viewport_id, size).await?;
+                self.add_surface(surface, viewport_id, (size.width, size.height)).await?;
             }
         } else {
             log::warn!("No window - clearing all surfaces");
@@ -195,7 +218,7 @@ impl Painter {
         &mut self,
         surface: wgpu::Surface<'static>,
         viewport_id: ViewportId,
-        size: winit::dpi::PhysicalSize<u32>,
+        size: (u32, u32),
     ) -> Result<(), crate::WgpuError> {
         let render_state = if let Some(render_state) = &self.render_state {
             render_state
@@ -232,16 +255,16 @@ impl Painter {
             viewport_id,
             SurfaceState {
                 surface,
-                width: size.width,
-                height: size.height,
+                width: size.0,
+                height: size.1,
                 alpha_mode,
             },
         );
-        let Some(width) = NonZeroU32::new(size.width) else {
+        let Some(width) = NonZeroU32::new(size.0) else {
             log::debug!("The window width was zero; skipping generate textures");
             return Ok(());
         };
-        let Some(height) = NonZeroU32::new(size.height) else {
+        let Some(height) = NonZeroU32::new(size.1) else {
             log::debug!("The window height was zero; skipping generate textures");
             return Ok(());
         };
